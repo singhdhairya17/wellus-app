@@ -1,0 +1,43 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native credentials and build artifacts
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.apk
+*.pem
+
+# Metro
+.metro-health-check*
+
+# Debug logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# Local env files (ignore all .env variants)
+.env
+.env.*
+
+# Build artifacts
+build-*.apk
+.build-*.apk
+
+# TypeScript
+*.tsbuildinfo
+
+# Example app (if folder, add trailing slash)
+app-example/
