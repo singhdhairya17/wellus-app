@@ -31,13 +31,46 @@ yarn-error.*
 # Local env files (ignore all .env variants)
 .env
 .env.*
+.env.local
+.env.development
+.env.production
+
+# Sensitive files
+*.pem
+*.key
+*.cert
+secrets.json
+config.json
 
 # Build artifacts
 build-*.apk
 .build-*.apk
+*.aab
+*.ipa
 
 # TypeScript
 *.tsbuildinfo
 
 # Example app (if folder, add trailing slash)
 app-example/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+*.log
+*.tmp
+*.temp
+jjjj.txt
+
+# Convex (keep schema but ignore generated files if needed)
+# convex/_generated/ is usually committed, but you can uncomment if needed
+# convex/_generated/

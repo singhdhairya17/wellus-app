@@ -1,22 +1,35 @@
 {
   "expo": {
-    "name": "Dietly.ai",
+    "name": "Wellus",
     "slug": "ai-diet-planner",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "wellus",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.wellus.app",
+      "buildNumber": "5",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Wellus needs camera access to scan food labels and extract nutrition information.",
+        "NSPhotoLibraryUsageDescription": "Wellus needs photo library access to select food label images for scanning."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.tubeguruji.aidietplanner"
+      "package": "com.wellus.app",
+      "versionCode": 5,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -29,11 +42,20 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#ffffff",
+          "imageWidth": 150
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Wellus needs access to your photos to scan food labels and track your nutrition.",
+          "cameraPermission": "Wellus needs camera access to capture food label images for nutrition tracking."
+        }
+      ],
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
@@ -43,8 +65,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "5735dc6b-a5bf-4e13-8264-d2e234afb4a5"
+        "projectId": "f4800fae-7228-4ab6-86c7-d4ff4ef6daf6"
       }
-    }
+    },
+    "owner": "dhairyasingh17"
   }
 }

@@ -2,17 +2,22 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "allowJs": true,            // ✅ allow .js / .jsx files
+    "checkJs": false,           // ✅ don't type-check plain JS
+    "esModuleInterop": true,    // ✅ better import support
+    "resolveJsonModule": true,
+    "moduleResolution": "bundler",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "**/*.js",                  // ✅ include .js files
+    "**/*.jsx",                 // ✅ include .jsx files
     ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "app/index.jsx"
-  ]
+    "expo-env.d.ts"
+  ],
+  "exclude": ["node_modules"]
 }

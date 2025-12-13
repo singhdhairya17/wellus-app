@@ -1,0 +1,51 @@
+# Exclude documentation files
+docs/
+*.md
+!README.md
+
+# Exclude generated files
+convex/_generated/
+
+# Exclude cache and temp files
+.expo/
+node_modules/
+.git/
+*.log
+.npm/
+.yarn/
+
+# Exclude build artifacts
+dist/
+build/
+*.apk
+*.ipa
+*.aab
+
+# Exclude test files
+**/__tests__/
+**/*.test.js
+**/*.test.jsx
+**/*.spec.js
+**/*.spec.jsx
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# Exclude OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Exclude environment files
+.env.local
+.env.*.local
+
+# Exclude temporary files
+*.tmp
+*.temp
+.cache/
+

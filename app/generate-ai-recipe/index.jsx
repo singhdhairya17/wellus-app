@@ -1,10 +1,10 @@
 import { View, Text, Platform, TextInput, StyleSheet } from 'react-native'
 import React, { useState } from 'react'
-import Colors from './../../shared/Colors'
-import Button from './../../components/shared/Button'
-import { GenerateAIRecipe } from '../../services/AiModel'
-import Prompt from '../../shared/Prompt'
-import RecipeOptionList from '../../components/RecipeOptionList'
+import Colors from '../../constants/colors'
+import Button from '../../components/common/shared/Button'
+import { GenerateAIRecipe } from '../../services/ai/AiModel'
+import Prompt from '../../constants/prompts'
+import RecipeOptionList from '../../components/recipes/RecipeOptionList'
 export default function GenerateAiRecipe() {
 
     const [input, setInput] = useState();

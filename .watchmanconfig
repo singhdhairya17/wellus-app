@@ -1,0 +1,13 @@
+{
+  "ignore_dirs": [
+    "node_modules/@esbuild/linux-ppc64",
+    "node_modules/@esbuild/linux-arm64",
+    "node_modules/@esbuild/darwin-arm64",
+    "node_modules/@esbuild/darwin-x64",
+    "node_modules/@esbuild/freebsd-x64",
+    "node_modules/@esbuild/netbsd-x64",
+    "node_modules/@esbuild/openbsd-x64",
+    "node_modules/@esbuild/sunos-x64"
+  ]
+}
+

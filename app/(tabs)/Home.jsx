@@ -1,17 +1,30 @@
-import { View, Text, Platform, FlatList } from 'react-native'
-import React, { useContext, useEffect, useState } from 'react'
+import { View, Text, Platform, FlatList, TouchableOpacity, Alert } from 'react-native'
+import React, { useContext, useEffect, useState, useMemo, useCallback } from 'react'
 import { UserContext } from './../../context/UserContext'
 import { useRouter } from 'expo-router'
-import HomeHeader from '../../components/HomeHeader'
-import TodayProgress from '../../components/TodayProgress'
-import GenerateRecipeCard from '../../components/GenerateRecipeCard'
-import TodaysMealPlan from '../../components/TodaysMealPlan'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useTheme } from '../../context/ThemeContext'
+import HomeHeader from '../../components/dashboard/HomeHeader'
+import TodayProgress from '../../components/dashboard/TodayProgress'
 import { RefreshDataContext } from '../../context/RefreshDataContext'
-export default function Home() {
+import MacronutrientsDashboard from '../../components/dashboard/MacronutrientsDashboard'
+import AdaptiveInsights from '../../components/dashboard/AdaptiveInsights'
+import WaterIntakeTracker from '../../components/tracking/WaterIntakeTracker'
+import { HugeiconsIcon } from '@hugeicons/react-native'
+import { Chat01Icon } from '@hugeicons/core-free-icons'
+import { LinearGradient } from 'expo-linear-gradient'
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated'
+import { triggerHaptic } from '../../utils/haptics'
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity)
+
+function Home() {
     const { user } = useContext(UserContext)
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const { refreshData, setRefreshData } = useContext(RefreshDataContext)
+    const insets = useSafeAreaInsets()
+    const { colors } = useTheme()
 
     useEffect(() => {
         if (!user?.weight) {
@@ -21,22 +34,134 @@ export default function Home() {
             router.replace('/')
         }
     }, [user])
+
+    // Calculate tab bar height for proper spacing
+    // Tab bar is typically 60px + safe area bottom (iOS) or 60px (Android)
+    const tabBarHeight = Platform.OS === 'ios' 
+        ? 60 + Math.max(insets.bottom - 10, 0) 
+        : 60;
+    // Add extra padding to ensure buttons don't overlap (tab bar + 120px clearance for large buttons)
+    const bottomPadding = tabBarHeight + 120;
+
+    // FAB animation
+    const fabScale = useSharedValue(1)
+    const fabAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: fabScale.value }],
+    }))
+
+    const handleFabPressIn = () => {
+        fabScale.value = withSpring(0.9, { damping: 15, stiffness: 300 })
+        triggerHaptic.light()
+    }
+
+    const handleFabPressOut = () => {
+        fabScale.value = withSpring(1, { damping: 15, stiffness: 300 })
+    }
+
+    const handleFabPress = useCallback(() => {
+        if (!user?._id) {
+            Alert.alert('Error', 'Please login first')
+            return
+        }
+        
+        // Navigate to health coach page
+        try {
+            router.push('/health-coach')
+        } catch (error) {
+            Alert.alert('Error', 'Failed to open Health Coach. Please try again.')
+        }
+    }, [user?._id, router])
+
+    const handleRefresh = useCallback(() => {
+        setRefreshData(Date.now())
+    }, [setRefreshData])
+
+    // Memoize header component to prevent re-renders - optimized for faster rendering
+    const headerComponent = useMemo(() => (
+        <View style={{
+            paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 10) : Math.max(insets.top + 10, 20),
+            paddingHorizontal: 20,
+            paddingBottom: 20
+        }}>
+            <HomeHeader />
+            <TodayProgress />
+            <MacronutrientsDashboard />
+            <WaterIntakeTracker />
+            <AdaptiveInsights />
+        </View>
+    ), [insets.top, colors.BACKGROUND])
+
+    // Memoize content container style
+    const contentContainerStyle = useMemo(() => ({
+        paddingBottom: Platform.OS === 'ios' 
+            ? bottomPadding + Math.max(insets.bottom, 20) + 20
+            : bottomPadding + 20
+    }), [bottomPadding, insets.bottom])
+
+    // Calculate FAB position (above bottom nav bar) - very close to nav bar
+    // Position it just above the tab bar with minimal spacing
+    const fabBottom = Platform.OS === 'ios' 
+        ? Math.max(insets.bottom, 10) + 15  // 15px above bottom (very close to nav bar)
+        : 15  // 15px above bottom on Android
+
     return (
-        <FlatList
-            data={[]}
-            renderItem={() => null}
-            onRefresh={() => setRefreshData(Date.now())}
-            refreshing={loading}
-            ListHeaderComponent={
-                <View style={{
-                    paddingTop: Platform.OS == 'ios' && 40,
-                    padding: 20
-                }}>
-                    <HomeHeader />
-                    <TodayProgress />
-                    <GenerateRecipeCard />
-                    <TodaysMealPlan />
-                </View>}
-        ></FlatList>
+        <View style={{ flex: 1, backgroundColor: colors.BACKGROUND }}>
+            <FlatList
+                data={[]}
+                renderItem={() => null}
+                onRefresh={handleRefresh}
+                refreshing={loading}
+                ListHeaderComponent={headerComponent}
+                contentContainerStyle={contentContainerStyle}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={10}
+                updateCellsBatchingPeriod={50}
+                initialNumToRender={10}
+                windowSize={10}
+            />
+            
+            {/* Floating Action Button - Health Coach */}
+            <AnimatedTouchable
+                onPress={handleFabPress}
+                onPressIn={handleFabPressIn}
+                onPressOut={handleFabPressOut}
+                style={[
+                    {
+                        position: 'absolute',
+                        right: 20,
+                        bottom: fabBottom,
+                        width: 56,
+                        height: 56,
+                        borderRadius: 28,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        shadowColor: colors.PRIMARY,
+                        shadowOffset: { width: 0, height: 8 },
+                        shadowOpacity: 0.4,
+                        shadowRadius: 12,
+                        elevation: 8,
+                        zIndex: 1000
+                    },
+                    fabAnimatedStyle
+                ]}
+            >
+                <LinearGradient
+                    colors={[colors.PRIMARY, colors.SECONDARY]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: 28,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                    }}
+                >
+                    <HugeiconsIcon icon={Chat01Icon} size={28} color={colors.WHITE} />
+                </LinearGradient>
+            </AnimatedTouchable>
+        </View>
     )
 }
+
+export default React.memo(Home)
