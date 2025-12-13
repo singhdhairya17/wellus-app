@@ -109,15 +109,28 @@ export default function Index() {
     }
 
     const checkAuthAndRememberMe = async () => {
-      // Check if "Remember Me" is enabled
-      const rememberMe = await AsyncStorage.getItem('rememberMe');
-      
-      if (rememberMe !== 'true') {
-        // If "Remember Me" is not enabled, sign out any existing session
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-          await signOut(auth);
+      try {
+        // Check if "Remember Me" is enabled
+        const rememberMe = await AsyncStorage.getItem('rememberMe');
+        
+        if (rememberMe !== 'true') {
+          // If "Remember Me" is not enabled, sign out any existing session
+          const currentUser = auth.currentUser;
+          if (currentUser) {
+            try {
+              await signOut(auth);
+            } catch (signOutError) {
+              console.error('[Auth] Error signing out:', signOutError);
+              // Continue even if signOut fails
+            }
+          }
+          if (!mounted) return;
+          setUser(null);
+          return;
         }
+      } catch (error) {
+        console.error('[Auth] Error checking Remember Me:', error);
+        // If error occurs, default to not remembering (secure default)
         if (!mounted) return;
         setUser(null);
         return;

@@ -68,3 +68,4 @@ Your OpenAI API key is now configured!
 
 **Need more help?** See: `docs/setup/OPENAI_API_KEY_SETUP.md`
 
+

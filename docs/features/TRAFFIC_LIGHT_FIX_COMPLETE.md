@@ -193,3 +193,4 @@ const trafficLight = useMemo(() => getTrafficLightStatus(current, goal, label), 
 **Date:** Fixed  
 **Files Modified:** `components/dashboard/MacronutrientsDashboard.jsx`
 
+

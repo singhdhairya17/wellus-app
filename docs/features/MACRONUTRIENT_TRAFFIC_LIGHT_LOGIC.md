@@ -221,3 +221,4 @@ Update `GenerateMacroExplanation` to use consistent status:
 - Use same thresholds as `GenerateMacroExplanation`
 - This ensures visual consistency
 
+

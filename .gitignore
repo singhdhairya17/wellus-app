@@ -16,6 +16,11 @@ expo-env.d.ts
 *.mobileprovision
 *.apk
 *.pem
+*.cert
+
+# Sensitive files
+secrets.json
+config.json
 
 # Metro
 .metro-health-check*

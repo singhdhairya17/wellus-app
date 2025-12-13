@@ -101,3 +101,4 @@ The message "✅ ML Kit Text Recognition loaded successfully" means:
 
 **The model is bundled automatically when you build - no extra configuration needed!** 🚀
 
+

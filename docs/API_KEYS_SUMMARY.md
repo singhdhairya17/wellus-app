@@ -156,3 +156,4 @@ All services that require payment accept:
 **To enable AI features, you only need ONE key:**
 - Either `EXPO_PUBLIC_OPENAI_API_KEY` OR `EXPO_PUBLIC_OPENROUTER_API_KEY`
 
+
