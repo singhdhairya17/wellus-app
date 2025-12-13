@@ -127,13 +127,16 @@ export const rateLimiter = new RateLimiter();
  * Sanitize error messages to prevent information leakage
  */
 export const sanitizeError = (error, isDevelopment = false) => {
-    // In development, show full errors
+    // Always extract error message as string first
+    const errorMessage = error?.message || error?.toString() || 'An error occurred';
+    
+    // In development, show full error message but still return as string
     if (isDevelopment) {
-        return error;
+        // Return full error details as string for debugging
+        return errorMessage;
     }
 
     // In production, sanitize error messages
-    const errorMessage = error?.message || error?.toString() || 'An error occurred';
 
     // Don't expose internal details
     const sensitivePatterns = [

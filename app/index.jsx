@@ -24,17 +24,17 @@ export default function Index() {
 
   useEffect(() => {
     // Check if onboarding has been shown - optimized for faster rendering
-    // Use Promise to avoid blocking
-    Promise.resolve().then(async () => {
+    const checkOnboarding = async () => {
       try {
         const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
         // Removed console.logs for faster execution
       } catch (error) {
-        // Silent fail - don't block app
+        console.error('[Onboarding] Error checking onboarding:', error);
       } finally {
         setIsCheckingOnboarding(false);
       }
-    });
+    };
+    checkOnboarding();
   }, []);
 
   // Check onboarding when user is set (for new users) - This runs AFTER user is loaded
@@ -109,14 +109,14 @@ export default function Index() {
     }
 
     const checkAuthAndRememberMe = async () => {
-      // Check if "Remember Me" is enabled - use Promise to avoid blocking
-      const rememberMe = await AsyncStorage.getItem('rememberMe').catch(() => null);
+      // Check if "Remember Me" is enabled
+      const rememberMe = await AsyncStorage.getItem('rememberMe');
       
       if (rememberMe !== 'true') {
         // If "Remember Me" is not enabled, sign out any existing session
         const currentUser = auth.currentUser;
         if (currentUser) {
-          signOut(auth).catch(() => {}); // Don't await - non-blocking
+          await signOut(auth);
         }
         if (!mounted) return;
         setUser(null);
