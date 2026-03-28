@@ -14,6 +14,26 @@
 
 Wellus is a comprehensive nutrition tracking application that combines OCR technology, AI-powered meal planning, and adaptive monitoring to help users achieve their health goals. The app features food label scanning, weight tracking, exercise logging, and detailed progress analytics.
 
+## 📸 App Screenshots
+
+<p align="center">
+  <img src="assets/screenshots/starting_page.jpeg" width="220"/>
+  <img src="assets/screenshots/login_signup.jpeg" width="220"/>
+  <img src="assets/screenshots/home.jpeg" width="220"/>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/meal_tracker.jpeg" width="220"/>
+  <img src="assets/screenshots/OCR.jpeg" width="220"/>
+  <img src="assets/screenshots/progress.jpeg" width="220"/>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/macronutrients.jpeg" width="220"/>
+  <img src="assets/screenshots/health_coach.jpeg" width="220"/>
+  <img src="assets/screenshots/profile.jpeg" width="220"/>
+</p>
+
 ## ✨ Key Features
 
 ### 🎯 Core Features
