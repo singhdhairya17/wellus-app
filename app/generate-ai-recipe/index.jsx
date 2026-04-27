@@ -39,7 +39,7 @@ export default function GenerateAiRecipe() {
             <Text style={{
                 fontSize: 30,
                 fontWeight: 'bold'
-            }}>AI Recipe Generator ✨</Text>
+            }}>AI recipe generator</Text>
             <Text style={{
                 marginTop: 5,
                 color: Colors.GRAY,

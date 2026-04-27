@@ -1,23 +1,19 @@
 /**
  * Smart Water Reminder Service
  * Sends notifications if user hasn't drunk water in a while
- * 
+ *
  * Recommended:
  * - Daily intake: 2-3L (or 30-35ml per kg body weight)
  * - Interval: Every 1.5-2 hours during waking hours (6 AM - 10 PM)
  */
 
-import * as Notifications from 'expo-notifications'
 import moment from 'moment'
+import { ensureNotificationHandler, loadExpoNotifications } from '../../utils/expoNotificationsGate'
 
-// Configure notification handler
-Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-    }),
-})
+async function getNotifications() {
+    await ensureNotificationHandler()
+    return loadExpoNotifications()
+}
 
 /**
  * Calculate recommended daily water intake based on body weight
@@ -61,15 +57,15 @@ export const shouldSendWaterReminder = (lastWaterTimestamp) => {
     if (!isWakingHours()) {
         return false
     }
-    
+
     const hoursSince = getHoursSinceLastWater(lastWaterTimestamp)
-    
+
     // If no water logged today, remind after 2 hours from 6 AM
     if (hoursSince === null) {
         const currentHour = moment().hour()
         return currentHour >= 8 // Remind at 8 AM if no water logged
     }
-    
+
     // Remind if it's been more than 1.5 hours since last water
     return hoursSince >= 1.5
 }
@@ -80,34 +76,40 @@ export const shouldSendWaterReminder = (lastWaterTimestamp) => {
  */
 export const scheduleWaterReminders = async (lastWaterTimestamp, dailyGoal = 2500) => {
     try {
+        const Notifications = await getNotifications()
+        if (!Notifications) return
+
         // Cancel existing water reminders
         await Notifications.cancelAllScheduledNotificationsAsync()
-        
+
         // Only schedule if during waking hours
         if (!isWakingHours()) {
             return
         }
-        
+
         const hoursSince = getHoursSinceLastWater(lastWaterTimestamp)
         const currentHour = moment().hour()
-        
+
         // If no water logged, schedule reminder for 2 hours from now (or 8 AM if earlier)
         if (hoursSince === null) {
             const reminderTime = currentHour < 8 ? 8 : currentHour + 2
-            if (reminderTime < 22) { // Only if before 10 PM
-                await scheduleNotification(reminderTime, 0, dailyGoal)
+            if (reminderTime < 22) {
+                // Only if before 10 PM
+                await scheduleNotification(Notifications, reminderTime, 0, dailyGoal)
             }
             return
         }
-        
+
         // If it's been more than 1.5 hours, schedule immediate reminder
         if (hoursSince >= 1.5) {
-            await scheduleNotification(currentHour, moment().minute() + 5, dailyGoal)
+            await scheduleNotification(Notifications, currentHour, moment().minute() + 5, dailyGoal)
         } else {
             // Schedule next reminder for 1.5 hours from last water intake
             const nextReminderTime = moment(lastWaterTimestamp).add(1.5, 'hours')
-            if (nextReminderTime.hour() < 22) { // Only if before 10 PM
+            if (nextReminderTime.hour() < 22) {
+                // Only if before 10 PM
                 await scheduleNotification(
+                    Notifications,
                     nextReminderTime.hour(),
                     nextReminderTime.minute(),
                     dailyGoal
@@ -122,17 +124,14 @@ export const scheduleWaterReminders = async (lastWaterTimestamp, dailyGoal = 250
 /**
  * Schedule a single water reminder notification
  */
-const scheduleNotification = async (hour, minute, dailyGoal) => {
-    const triggerDate = moment()
-        .hour(hour)
-        .minute(minute)
-        .second(0)
-    
+const scheduleNotification = async (Notifications, hour, minute, dailyGoal) => {
+    const triggerDate = moment().hour(hour).minute(minute).second(0)
+
     // If time has passed today, schedule for tomorrow
     if (triggerDate.isBefore(moment())) {
         triggerDate.add(1, 'day')
     }
-    
+
     await Notifications.scheduleNotificationAsync({
         content: {
             title: '💧 Time to Drink Water!',
@@ -150,6 +149,9 @@ const scheduleNotification = async (hour, minute, dailyGoal) => {
  * Send immediate water reminder notification
  */
 export const sendImmediateWaterReminder = async (dailyGoal = 2500) => {
+    const Notifications = await getNotifications()
+    if (!Notifications) return
+
     await Notifications.scheduleNotificationAsync({
         content: {
             title: '💧 Time to Drink Water!',
@@ -160,4 +162,3 @@ export const sendImmediateWaterReminder = async (dailyGoal = 2500) => {
         trigger: null, // Send immediately
     })
 }
-

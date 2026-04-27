@@ -14,7 +14,7 @@ const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: "project-dc8e7.firebaseapp.com",
   projectId: "project-dc8e7",
-  storageBucket: "project-dc8e7.firebasestorage.app",
+  storageBucket: "project-dc8e7.appspot.com",
   messagingSenderId: "687232619743",
   appId: "1:687232619743:web:347e873afcf47acdcf856a",
   measurementId: "G-645FXTM5D3"

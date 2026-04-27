@@ -1,5 +1,5 @@
 import { View, Text, Platform, FlatList, ActivityIndicator, Alert } from 'react-native'
-import React, { useRef, useEffect, useState } from 'react'
+import React, { useRef, useEffect } from 'react'
 import RecipeIntro from '../../components/recipes/RecipeIntro'
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from 'convex/react';
@@ -15,42 +15,27 @@ export default function RecipeDetail() {
     const { recipeId } = useLocalSearchParams();
     const router = useRouter();
     const actionSheetRef = useRef(null);
-    const [hasError, setHasError] = useState(false);
-    
-    // Check if recipeId looks like a scannedFood ID (starts with 'j' typically)
-    // ScannedFood IDs from Convex typically start with 'j', recipe IDs start with different prefixes
-    useEffect(() => {
-        if (recipeId && typeof recipeId === 'string' && recipeId.startsWith('j') && recipeId.length > 20) {
-            // Likely a scannedFood ID, redirect back
-            Alert.alert(
-                'Invalid Recipe', 
-                'This item cannot be viewed as a recipe. It is a scanned food item.',
-                [
-                    { text: 'OK', onPress: () => router.back() }
-                ]
-            );
-            setHasError(true);
-            return;
-        }
-    }, [recipeId, router]);
-    
+
+    // Convex IDs for `recipes` use the same string shape as other tables (often start with "j").
+    // Never guess "scanned food" from the ID — always load by recipes table; wrong/missing IDs
+    // yield null from GetRecipeById.
+
     const recipeDetail = useQuery(
-        api.Recipes.GetRecipeById, 
-        (recipeId && !hasError) ? { id: recipeId } : 'skip'
+        api.Recipes.GetRecipeById,
+        recipeId ? { id: recipeId } : 'skip'
     );
 
-    // Handle error case - if recipeId is from wrong table (e.g., scannedFood)
     useEffect(() => {
-        if (recipeDetail === null && recipeId && !hasError) {
+        if (recipeDetail === null && recipeId) {
             Alert.alert(
-                'Recipe Not Found', 
+                'Recipe Not Found',
                 'The recipe you\'re looking for doesn\'t exist.',
                 [
                     { text: 'OK', onPress: () => router.back() }
                 ]
             );
         }
-    }, [recipeDetail, recipeId, router, hasError]);
+    }, [recipeDetail, recipeId, router]);
 
     useEffect(() => {
         if (recipeId === undefined) {

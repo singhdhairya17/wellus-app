@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert, Platform } from 'react-native'
-import React, { useContext, useState, useEffect } from 'react'
+import React, { useContext, useState } from 'react'
 import { useTheme } from '../../context/ThemeContext'
 import { UserContext } from '../../context/UserContext'
 import { useQuery, useMutation } from 'convex/react'
@@ -7,7 +7,7 @@ import { api } from '../../convex/_generated/api'
 import { RefreshDataContext } from '../../context/RefreshDataContext'
 import { LinearGradient } from 'expo-linear-gradient'
 import { HugeiconsIcon } from '@hugeicons/react-native'
-import { Dumbbell01Icon, PlusSignSquareIcon, AnalyticsUpIcon } from '@hugeicons/core-free-icons'
+import { WeightScaleIcon, PlusSignSquareIcon, AnalyticsUpIcon } from '@hugeicons/core-free-icons'
 import Input from '../common/shared/Input'
 import Button from '../common/shared/Button'
 import moment from 'moment'
@@ -182,49 +182,71 @@ export default function WeightTracker() {
                     elevation: 4
                 }]}
             >
-                <View style={styles.header}>
-                    <View style={[styles.iconContainer, { backgroundColor: colors.PRIMARY + '15' }]}>
-                        <HugeiconsIcon icon={Dumbbell01Icon} size={24} color={colors.PRIMARY} />
-                    </View>
-                    <View style={styles.headerText}>
-                        <Text style={[styles.title, { color: colors.TEXT }]}>Weight Tracking</Text>
-                        {latestWeight && (
-                            <Text style={[styles.subtitle, { color: colors.TEXT_SECONDARY }]}>
-                                Current: {latestWeight} kg
-                                {user?.goalWeight && ` • Goal: ${user.goalWeight} kg`}
-                            </Text>
+                <View style={[styles.headerDividerWrap, { borderBottomColor: colors.BORDER + '55' }]}>
+                    <View style={styles.header}>
+                        <View style={[styles.iconContainer, { backgroundColor: colors.PRIMARY + '18' }]}>
+                            <HugeiconsIcon icon={WeightScaleIcon} size={26} color={colors.PRIMARY} />
+                        </View>
+                        <View style={styles.headerText}>
+                            <Text style={[styles.title, { color: colors.TEXT }]}>Weight</Text>
+                            {latestWeight ? (
+                                <Text style={[styles.subtitle, { color: colors.TEXT_SECONDARY }]}>
+                                    Last log {latestWeight} kg
+                                    {user?.goalWeight ? ` · Goal ${user.goalWeight} kg` : ''}
+                                </Text>
+                            ) : (
+                                <Text style={[styles.subtitle, { color: colors.TEXT_SECONDARY }]}>
+                                    Log weight to see trends and BMI
+                                </Text>
+                            )}
+                        </View>
+                        {user?.goalWeight && (
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setGoalWeight(user.goalWeight.toString())
+                                    setShowGoalModal(true)
+                                }}
+                                style={[styles.goalButton, { backgroundColor: colors.GREEN + '18' }]}
+                                accessibilityLabel="Edit goal weight"
+                            >
+                                <HugeiconsIcon icon={AnalyticsUpIcon} size={18} color={colors.GREEN} />
+                            </TouchableOpacity>
                         )}
                     </View>
-                    {user?.goalWeight && (
-                        <TouchableOpacity
-                            onPress={() => {
-                                setGoalWeight(user.goalWeight.toString())
-                                setShowGoalModal(true)
-                            }}
-                            style={[styles.goalButton, { backgroundColor: colors.GREEN + '15' }]}
-                        >
-                            <HugeiconsIcon icon={AnalyticsUpIcon} size={18} color={colors.GREEN} />
-                        </TouchableOpacity>
-                    )}
                 </View>
-                
-                {/* Primary Stats */}
-                <View style={styles.statsContainer}>
-                    {latestWeight && (
-                        <View style={[styles.statCard, { backgroundColor: colors.PRIMARY + '10' }]}>
-                            <Text style={[styles.statValue, { color: colors.PRIMARY }]}>
-                                {latestWeight} kg
-                            </Text>
-                            <Text style={[styles.statLabel, { color: colors.TEXT_SECONDARY }]}>
-                                Current
+
+                {latestWeight && (
+                    <View style={[styles.heroRow, { backgroundColor: colors.PRIMARY + '0D' }]}>
+                        <View>
+                            <Text style={[styles.heroLabel, { color: colors.TEXT_SECONDARY }]}>Current</Text>
+                            <Text style={[styles.heroValue, { color: colors.TEXT }]}>
+                                {latestWeight}
+                                <Text style={[styles.heroUnit, { color: colors.TEXT_SECONDARY }]}> kg</Text>
                             </Text>
                         </View>
-                    )}
-                    
+                        {user?.goalWeight != null && (
+                            <View style={styles.heroGoal}>
+                                <Text style={[styles.heroLabel, { color: colors.TEXT_SECONDARY }]}>Goal</Text>
+                                <Text style={[styles.heroGoalValue, { color: colors.PRIMARY }]}>
+                                    {user.goalWeight} kg
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                )}
+                
+                {/* Primary Stats (hero shows current weight; tiles = BMI + trend) */}
+                <View style={styles.statsContainer}>
                     {bmi && (
-                        <View style={[styles.statCard, { backgroundColor: bmiCategory.color + '15' }]}>
+                        <View style={[styles.statCard, { 
+                            backgroundColor: colors.isDark ? colors.SURFACE : '#FFFFFF',
+                            borderColor: colors.BORDER + '40'
+                        }]}>
                             <Text style={[styles.statValue, { color: bmiCategory.color }]}>
                                 {bmi}
+                            </Text>
+                            <Text style={[styles.statBmiTag, { color: bmiCategory.color }]}>
+                                {bmiCategory.label}
                             </Text>
                             <Text style={[styles.statLabel, { color: colors.TEXT_SECONDARY }]}>
                                 BMI
@@ -234,23 +256,26 @@ export default function WeightTracker() {
                     
                     {weightChange && (
                         <View style={[styles.statCard, { 
-                            backgroundColor: parseFloat(weightChange) >= 0 
-                                ? colors.RED + '15' 
-                                : colors.GREEN + '15' 
+                            backgroundColor: colors.isDark ? colors.SURFACE : '#FFFFFF',
+                            borderColor: colors.BORDER + '40'
                         }]}>
                             <Text style={[styles.statValue, { 
                                 color: parseFloat(weightChange) >= 0 ? colors.RED : colors.GREEN 
                             }]}>
-                                {parseFloat(weightChange) >= 0 ? '+' : ''}{weightChange} kg
+                                {parseFloat(weightChange) >= 0 ? '+' : ''}{weightChange}
                             </Text>
+                            <Text style={[styles.statUnit, { color: colors.TEXT_SECONDARY }]}>kg</Text>
                             <Text style={[styles.statLabel, { color: colors.TEXT_SECONDARY }]}>
-                                30-day
+                                30-day Δ
                             </Text>
                         </View>
                     )}
                 </View>
                 
                 {/* Advanced Stats */}
+                {(weightStats || correlationData) && (
+                    <Text style={[styles.sectionTitle, { color: colors.TEXT_SECONDARY }]}>Insights</Text>
+                )}
                 {(weightStats || correlationData) && (
                     <View style={styles.advancedStatsContainer}>
                         {weightStats?.weeklyAverage && (
@@ -312,7 +337,9 @@ export default function WeightTracker() {
                                 <Text style={[styles.advancedStatValue, { 
                                     color: Math.abs(parseFloat(remainingToGoal)) < 1 ? colors.GREEN : colors.TEXT 
                                 }]}>
-                                    {Math.abs(parseFloat(remainingToGoal)) < 1 ? '✓' : `${remainingToGoal >= 0 ? '+' : ''}${remainingToGoal}`} kg
+                                    {Math.abs(parseFloat(remainingToGoal)) < 1
+                                        ? 'At goal'
+                                        : `${remainingToGoal >= 0 ? '+' : ''}${remainingToGoal} kg`}
                                 </Text>
                                 <Text style={[styles.advancedStatLabel, { color: colors.TEXT_SECONDARY }]}>
                                     To Goal
@@ -490,30 +517,77 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         padding: 20,
     },
+    headerDividerWrap: {
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        marginHorizontal: -4,
+        paddingHorizontal: 4,
+        paddingBottom: 16,
+        marginBottom: 16
+    },
     header: {
         flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 20
+        alignItems: 'center'
     },
     iconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
+        width: 52,
+        height: 52,
+        borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12
+        marginRight: 14
     },
     headerText: {
         flex: 1
     },
     title: {
-        fontSize: 20,
-        fontWeight: '700',
-        marginBottom: 4
+        fontSize: 22,
+        fontWeight: '800',
+        marginBottom: 4,
+        letterSpacing: -0.3
     },
     subtitle: {
-        fontSize: 13,
-        fontWeight: '500'
+        fontSize: 14,
+        fontWeight: '500',
+        lineHeight: 20
+    },
+    heroRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        marginBottom: 14
+    },
+    heroLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+        marginBottom: 4
+    },
+    heroValue: {
+        fontSize: 34,
+        fontWeight: '800',
+        letterSpacing: -1
+    },
+    heroUnit: {
+        fontSize: 18,
+        fontWeight: '600'
+    },
+    heroGoal: {
+        alignItems: 'flex-end'
+    },
+    heroGoalValue: {
+        fontSize: 20,
+        fontWeight: '800'
+    },
+    sectionTitle: {
+        fontSize: 11,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
+        marginBottom: 8
     },
     goalButton: {
         width: 36,
@@ -525,21 +599,35 @@ const styles = StyleSheet.create({
     statsContainer: {
         flexDirection: 'row',
         gap: 10,
-        marginBottom: 12
+        marginBottom: 14
     },
     statCard: {
         flex: 1,
-        padding: 16,
-        borderRadius: 12,
-        alignItems: 'center'
+        minHeight: 100,
+        paddingVertical: 14,
+        paddingHorizontal: 8,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1
     },
     statValue: {
-        fontSize: 22,
+        fontSize: 21,
         fontWeight: '800',
-        marginBottom: 4
+        marginBottom: 2
+    },
+    statUnit: {
+        fontSize: 12,
+        fontWeight: '600',
+        marginBottom: 6
+    },
+    statBmiTag: {
+        fontSize: 11,
+        fontWeight: '700',
+        marginBottom: 6
     },
     statLabel: {
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: '600',
         textTransform: 'uppercase',
         letterSpacing: 0.5,

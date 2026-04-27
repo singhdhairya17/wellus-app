@@ -10,7 +10,6 @@ import { api } from './../../convex/_generated/api'
 import { UserContext } from './../../context/UserContext'
 import { useRouter } from 'expo-router'
 import { CalculateCaloriesAI } from '../../services/ai/AiModel'
-import Prompt from '../../constants/prompts'
 import { CalculateNutritionGoalsManually } from '../../services/calculation/ManualCalculationService'
 import { validateWeight, validateHeight, validateGender, validateGoal } from '../../utils/validation'
 import { sanitizeError } from '../../utils/security'
@@ -26,7 +25,11 @@ export default function Preferance() {
     const UpdateUserPref = useMutation(api.Users.UpdateUserPref)
     const CreateProfile = useMutation(api.Profiles.CreateProfile)
     const activeProfile = useQuery(api.Profiles.GetActiveProfile, user?._id ? { userId: user._id } : 'skip')
-    console.log(user)
+    console.log('[Preferance] Loaded user:', {
+        _id: user?._id,
+        email: user?.email,
+        hasPicture: !!user?.picture,
+    })
     
     const OnContinue = async () => {
         // SECURITY: Input validation
@@ -124,7 +127,7 @@ export default function Preferance() {
         setTimeout(async () => {
             try {
                 console.log('🔄 Background: Attempting AI enhancement...');
-                const PROMPT = JSON.stringify(data) + Prompt.CALORIES_PROMPT;
+                const PROMPT = JSON.stringify(data);
                 const AIResult = await CalculateCaloriesAI(PROMPT);
                 const AIResp = AIResult.choices[0].message.content;
                 const aiJSONContent = JSON.parse(AIResp.replace('```json', '').replace('```', ''));

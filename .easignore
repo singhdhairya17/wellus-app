@@ -3,8 +3,7 @@ docs/
 *.md
 !README.md
 
-# Exclude generated files
-convex/_generated/
+# Keep convex/_generated/ in the upload — the app imports it at build time.
 
 # Exclude cache and temp files
 .expo/

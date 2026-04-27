@@ -2,27 +2,29 @@
 // "mobile alerts summarizing their achievements each day and give personalized suggestions"
 // Implements push notifications for daily summaries
 
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { logger } from '../../utils/logger';
 import { speakDailySummary } from '../accessibility/VocalAlerts';
+import { ensureNotificationHandler, loadExpoNotifications } from '../../utils/expoNotificationsGate';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-    }),
-});
+async function getNotifications() {
+    await ensureNotificationHandler();
+    return loadExpoNotifications();
+}
 
 /**
  * Request notification permissions
- * 
+ *
  * @returns {Promise<boolean>} - True if permissions granted
  */
 export const requestNotificationPermissions = async () => {
     try {
+        const Notifications = await getNotifications();
+        if (!Notifications) {
+            logger.warn('⚠️ Notifications unavailable (e.g. Expo Go)');
+            return false;
+        }
+
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
         let finalStatus = existingStatus;
 
@@ -57,13 +59,19 @@ export const requestNotificationPermissions = async () => {
 
 /**
  * Schedule daily summary notification
- * 
+ *
  * @param {object} summaryData - Daily summary data
  * @param {number} hour - Hour to send notification (0-23)
  * @param {number} minute - Minute to send notification (0-59)
  */
 export const scheduleDailySummary = async (summaryData, hour = 20, minute = 0) => {
     try {
+        const Notifications = await getNotifications();
+        if (!Notifications) {
+            logger.warn('⚠️ Cannot schedule daily summary — notifications unavailable');
+            return;
+        }
+
         const hasPermission = await requestNotificationPermissions();
         if (!hasPermission) {
             logger.warn('⚠️ Cannot schedule notification - permissions not granted');
@@ -145,11 +153,17 @@ export const scheduleDailySummary = async (summaryData, hour = 20, minute = 0) =
 
 /**
  * Send immediate daily summary notification
- * 
+ *
  * @param {object} summaryData - Daily summary data
  */
 export const sendDailySummaryNow = async (summaryData) => {
     try {
+        const Notifications = await getNotifications();
+        if (!Notifications) {
+            logger.warn('⚠️ Cannot send daily summary — notifications unavailable');
+            return;
+        }
+
         const hasPermission = await requestNotificationPermissions();
         if (!hasPermission) {
             logger.warn('⚠️ Cannot send notification - permissions not granted');
@@ -216,6 +230,8 @@ export const sendDailySummaryNow = async (summaryData) => {
  */
 export const cancelDailySummaries = async () => {
     try {
+        const Notifications = await getNotifications();
+        if (!Notifications) return;
         await Notifications.cancelAllScheduledNotificationsAsync();
         logger.log('✅ All daily summaries cancelled');
     } catch (error) {
@@ -225,11 +241,14 @@ export const cancelDailySummaries = async () => {
 
 /**
  * Get notification token for push notifications (future enhancement)
- * 
+ *
  * @returns {Promise<string|null>} - Notification token or null
  */
 export const getNotificationToken = async () => {
     try {
+        const Notifications = await getNotifications();
+        if (!Notifications) return null;
+
         const hasPermission = await requestNotificationPermissions();
         if (!hasPermission) {
             return null;
@@ -246,4 +265,3 @@ export const getNotificationToken = async () => {
         return null;
     }
 };
-

@@ -34,6 +34,16 @@ Wellus is a comprehensive nutrition tracking application that combines OCR techn
   <img src="assets/screenshots/profile.jpeg" width="220"/>
 </p>
 
+## 📝 Recent updates
+
+- **Convex-first AI** — Core AI flows (health coach, recipe generation, calorie estimation, nutrition parsing from text/image) run as **Convex actions** so API keys stay server-side. Configure **`OPENAI_API_KEY`** in the [Convex dashboard](https://dashboard.convex.dev) for your deployment (not only in local `.env`).
+- **Release builds and env** — Store and EAS-built APKs do **not** ship `.env.local`. Set **`EXPO_PUBLIC_*`** variables in **Expo → Project → Environment variables** (e.g. `production`) so the app has `EXPO_PUBLIC_CONVEX_URL`, Firebase, EAS project id, and optional OCR / image API keys at build time. Root layout shows a clear message if Convex URL is missing.
+- **Shared Convex client** — `utils/convexClient.js` centralizes the Convex client for services that call actions from the app.
+- **EAS profiles** — `eas.json` includes **`production-apk`** (production settings + Android **APK** for sideloading) alongside `development` (dev client + APK) and `production` (Play Store **AAB**).
+- **OCR and reliability** — OCR pipeline and related services updated for Convex-backed tiers, caching, and error handling where applicable.
+- **Notifications** — `utils/expoNotificationsGate.js` helps gate notification behavior for safer startup paths.
+- **App polish** — Updates across auth, tabs (Home, Profile, Scan), meal reminders, AI recipe flow, health coach UI, meal plan cards, weight tracker, and related Convex functions.
+
 ## ✨ Key Features
 
 ### 🎯 Core Features
@@ -63,9 +73,9 @@ Wellus is a comprehensive nutrition tracking application that combines OCR techn
 - **React Native SVG** - Chart rendering
 
 ### Backend & Services
-- **Convex** - Backend-as-a-Service (database, real-time queries, mutations)
+- **Convex** - Backend-as-a-Service (database, real-time queries, mutations, **server-side AI actions**)
 - **Firebase** - Authentication (email/password)
-- **OpenAI** - AI meal generation and nutrition analysis
+- **OpenAI** - Used inside **Convex** for chat-based AI (keys live in Convex env, not in the shipped JS bundle)
 - **ML Kit** - On-device text recognition (bundled with app)
 
 ### OCR Services
@@ -98,21 +108,32 @@ npm install
 
 ### 3. Environment Setup
 
-Create a `.env` file in the root directory:
+Create **`.env.local`** in the project root (ignored by git). Expo loads it in development. Example:
 
 ```env
-# Convex
-EXPO_PUBLIC_CONVEX_URL=your_convex_deployment_url
+# Required for the app to talk to Convex
+EXPO_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
 
-# OpenAI (for AI meal generation)
-OPENAI_API_KEY=your_openai_api_key
+# Firebase (client)
+EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_web_api_key
 
-# OCR APIs (optional - ML Kit works offline)
-OCR_SPACE_API_KEY=your_ocr_space_key
-GOOGLE_VISION_API_KEY=your_google_vision_key
-AZURE_VISION_KEY=your_azure_vision_key
-AZURE_VISION_ENDPOINT=your_azure_endpoint
+# EAS / notifications (matches app.json extra.eas.projectId)
+EXPO_PUBLIC_EAS_PROJECT_ID=your_eas_project_id
+
+# OpenAI — set on Convex for server actions (Dashboard → Settings → Environment variables)
+# OPENAI_API_KEY is NOT read from this file by Convex cloud; set it in Convex.
+
+# Optional OCR / vision (client-side fallbacks; names must match code)
+# EXPO_PUBLIC_GOOGLE_VISION_API_KEY=
+# EXPO_PUBLIC_AZURE_VISION_API_KEY=
+# EXPO_PUBLIC_AZURE_VISION_ENDPOINT=
+# EXPO_PUBLIC_OCR_DEBUG=1
+
+# Optional recipe images (client → Airguru Lab)
+# EXPO_PUBLIC_AIRGURU_LAB_API_KEY=
 ```
+
+For **EAS builds**, mirror the same **`EXPO_PUBLIC_*`** names in the Expo dashboard for the right environment (`production`, `development`, etc.).
 
 ### 4. Start Development Server
 
@@ -174,7 +195,7 @@ wellus-app/
 │   └── ui/                       # UI components
 │
 ├── services/                     # Business logic
-│   ├── ai/                       # AI services (OpenAI)
+│   ├── ai/                       # AI services (call Convex actions)
 │   ├── ocr/                      # OCR services (ML Kit, APIs)
 │   ├── monitoring/               # Adaptive monitoring
 │   ├── calculation/              # Nutrition calculations
@@ -186,6 +207,7 @@ wellus-app/
 │   ├── Recipes.js                # Recipe management
 │   ├── MealPlan.jsx              # Meal planning
 │   ├── Tracking.js               # Weight, exercise, water tracking
+│   ├── Ai.js                     # Convex actions (OpenAI server-side)
 │   └── _generated/               # Auto-generated files
 │
 ├── context/                      # React Context providers
@@ -193,7 +215,7 @@ wellus-app/
 │   ├── ThemeContext.jsx          # Theme (light/dark)
 │   └── RefreshDataContext.jsx   # Data refresh triggers
 │
-├── utils/                        # Utility functions
+├── utils/                        # Utility functions (e.g. convexClient, notifications gate)
 ├── constants/                    # App constants
 └── assets/                       # Static assets (images, icons)
 ```
@@ -205,11 +227,11 @@ wellus-app/
 2. Create a new project
 3. Copy deployment URL to `.env` as `EXPO_PUBLIC_CONVEX_URL`
 
-### OpenAI
+### OpenAI (Convex server)
 1. Sign up at [platform.openai.com](https://platform.openai.com)
-2. Create API key in settings
-3. Add payment method (required)
-4. Copy key to `.env` as `OPENAI_API_KEY`
+2. Create an API key and add billing if required
+3. In **Convex** → your project → **Settings → Environment variables**, add **`OPENAI_API_KEY`**
+4. Deploy or sync so **`convex/Ai.js`** actions can call OpenAI (logs appear in Convex, not Metro)
 
 ### OCR APIs (Optional)
 - ML Kit works offline (bundled with app)
@@ -221,8 +243,11 @@ wellus-app/
 ### Android
 
 ```bash
-# Using EAS Build
-eas build --platform android --profile production
+# Play Store (AAB)
+npx eas-cli@latest build --platform android --profile production
+
+# Same production env/secrets, but output APK for sideloading / testing
+npx eas-cli@latest build --platform android --profile production-apk
 
 # Or build locally
 npx expo run:android --variant release

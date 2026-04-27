@@ -16,7 +16,6 @@ import Input from '../../components/common/shared/Input'
 import Button from '../../components/common/shared/Button'
 import { Dumbbell01Icon, FemaleSymbolFreeIcons, MaleSymbolIcon, PlusSignSquareIcon, WeightScaleIcon } from '@hugeicons/core-free-icons'
 import { CalculateCaloriesAI } from '../../services/ai/AiModel'
-import Prompt from '../../constants/prompts'
 import { CalculateNutritionGoalsManually } from '../../services/calculation/ManualCalculationService'
 import { LinearGradient } from 'expo-linear-gradient'
 import ProfileManager from '../../components/profile/ProfileManager'
@@ -38,14 +37,9 @@ const MenuOptions = [
         path: '/(tabs)/Progress'
     },
     {
-        title: 'Explore Recipes',
+        title: 'Recipes',
         icon: CookBookIcon,
         path: '/(tabs)/Meals'
-    },
-    {
-        title: 'Ai Recipes ',
-        icon: ServingFoodIcon,
-        path: '/generate-ai-recipe'
     },
     {
         title: 'Billing',
@@ -198,7 +192,7 @@ export default function Profile() {
             
             // Try AI calculation first, fallback to manual if rate limited
             try {
-                const PROMPT = JSON.stringify(data) + Prompt.CALORIES_PROMPT
+                const PROMPT = JSON.stringify(data)
                 const AIResult = await CalculateCaloriesAI(PROMPT)
                 const AIResp = AIResult.choices[0].message.content
                 JSONContent = JSON.parse(AIResp.replace('```json', '').replace('```', ''))

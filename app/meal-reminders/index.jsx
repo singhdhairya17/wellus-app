@@ -9,7 +9,7 @@ import { ServingFoodIcon, Clock01FreeIcons, ArrowLeft01Icon } from '@hugeicons/c
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { LinearGradient } from 'expo-linear-gradient'
-import * as Notifications from 'expo-notifications'
+import { requestPermissionsAsyncSafe } from '../../utils/expoNotificationsGate'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { triggerHaptic } from '../../utils/haptics'
 
@@ -94,7 +94,7 @@ export default function MealRemindersPage() {
             
             // Request notification permissions if enabling
             if (!isEnabled) {
-                const { status } = await Notifications.requestPermissionsAsync()
+                const { status } = await requestPermissionsAsyncSafe()
                 if (status !== 'granted') {
                     Alert.alert('Permission Required', 'Please enable notifications in settings to receive reminders.')
                 } else if (mealType === 'Water') {

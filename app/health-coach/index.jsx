@@ -56,18 +56,21 @@ export default function HealthCoachPage() {
     return (
         <ErrorBoundary>
             <View style={[styles.container, { backgroundColor: colors.BACKGROUND }]}>
-                <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
+                <View style={[styles.header, { 
+                    paddingTop: insets.top + 12,
+                    borderBottomColor: colors.BORDER || 'rgba(0,0,0,0.08)'
+                }]}>
                     <TouchableOpacity 
                         onPress={() => router.back()} 
                         style={[styles.backButton, {
-                            backgroundColor: colors.PRIMARY + '15',
+                            backgroundColor: colors.PRIMARY + '12',
                             borderWidth: 1,
-                            borderColor: colors.PRIMARY + '30',
+                            borderColor: colors.PRIMARY + '28',
                             shadowColor: colors.PRIMARY,
-                            shadowOffset: { width: 0, height: 2 },
-                            shadowOpacity: 0.2,
-                            shadowRadius: 4,
-                            elevation: 3
+                            shadowOffset: { width: 0, height: 1 },
+                            shadowOpacity: 0.12,
+                            shadowRadius: 3,
+                            elevation: 2
                         }]}
                         activeOpacity={0.7}
                     >
@@ -80,20 +83,20 @@ export default function HealthCoachPage() {
                     </TouchableOpacity>
                     <View style={styles.titleContainer}>
                         <LinearGradient
-                            colors={[colors.PRIMARY + '20', colors.PRIMARY + '10']}
+                            colors={[colors.PRIMARY + '22', colors.PRIMARY + '08']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={[styles.titleIconContainer, {
                                 borderWidth: 1,
-                                borderColor: colors.PRIMARY + '30'
+                                borderColor: colors.PRIMARY + '25'
                             }]}
                         >
-                            <HugeiconsIcon icon={Chat01Icon} size={28} color={colors.PRIMARY} />
+                            <HugeiconsIcon icon={Chat01Icon} size={26} color={colors.PRIMARY} />
                         </LinearGradient>
                         <View style={styles.titleTextContainer}>
-                            <Text style={[styles.title, { color: colors.TEXT }]}>AI Health Coach</Text>
+                            <Text style={[styles.title, { color: colors.TEXT }]}>Health Coach</Text>
                             <Text style={[styles.subtitle, { color: colors.TEXT_SECONDARY }]}>
-                                Your personalized health assistant
+                                Guidance based on your profile and goals
                             </Text>
                         </View>
                     </View>
@@ -111,17 +114,16 @@ const styles = StyleSheet.create({
     },
     header: {
         paddingHorizontal: 20,
-        paddingBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(0,0,0,0.05)'
+        paddingBottom: 14,
+        borderBottomWidth: StyleSheet.hairlineWidth
     },
     backButton: {
         width: 40,
         height: 40,
-        borderRadius: 20,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 14,
         alignSelf: 'flex-start'
     },
     titleContainer: {
@@ -130,9 +132,9 @@ const styles = StyleSheet.create({
         gap: 12
     },
     titleIconContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 52,
+        height: 52,
+        borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center'
     },
@@ -140,14 +142,15 @@ const styles = StyleSheet.create({
         flex: 1
     },
     title: {
-        fontSize: 24,
+        fontSize: 22,
         fontWeight: '800',
-        letterSpacing: -0.5,
-        marginBottom: 4
+        letterSpacing: -0.4,
+        marginBottom: 3
     },
     subtitle: {
         fontSize: 14,
-        fontWeight: '500'
+        fontWeight: '500',
+        lineHeight: 20
     }
 })
 

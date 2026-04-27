@@ -75,7 +75,11 @@ export default function SignIn() {
                 email: (email).toLowerCase()
             });
 
-            console.log(userData);
+            console.log('[SignIn] Loaded user data:', {
+                _id: userData?._id,
+                email: userData?.email,
+                hasPicture: !!userData?.picture,
+            });
             setUser(userData);
 
             // Check if user is new (created within last 30 minutes) and should see onboarding

@@ -9,6 +9,7 @@
  */
 
 import type * as AdaptiveMonitoring from "../AdaptiveMonitoring.js";
+import type * as Ai from "../Ai.js";
 import type * as Billing from "../Billing.js";
 import type * as MealPlan from "../MealPlan.js";
 import type * as Profiles from "../Profiles.js";
@@ -26,6 +27,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   AdaptiveMonitoring: typeof AdaptiveMonitoring;
+  Ai: typeof Ai;
   Billing: typeof Billing;
   MealPlan: typeof MealPlan;
   Profiles: typeof Profiles;

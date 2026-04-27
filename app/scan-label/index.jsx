@@ -19,6 +19,12 @@ import moment from 'moment'
 import { GenerateFoodItemExplanation } from '../../services/ai/XAIService'
 import { useConvex } from 'convex/react'
 
+const formatGrams = (n) => {
+    const v = Number(n) || 0
+    const r = parseFloat(v.toFixed(1))
+    return `${r}g`
+}
+
 export default function ScanLabel() {
     console.log('ML Kit available:', isLocalOCRAvailable())
     const [image, setImage] = useState(null)
@@ -359,7 +365,7 @@ export default function ScanLabel() {
     return (
         <ScrollView style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>📷 Scan Food Label</Text>
+                <Text style={styles.title}>Scan food label</Text>
                 <Text style={styles.subtitle}>Take a photo, select from gallery, or paste image URL</Text>
             </View>
 
@@ -385,7 +391,7 @@ export default function ScanLabel() {
                             />
                             <View style={{ height: 10 }} />
                             <Button
-                                title="✂️ Re-crop"
+                                title="Re-crop"
                                 onPress={recropCurrentImage}
                                 disabled={loading}
                             />
@@ -426,7 +432,7 @@ export default function ScanLabel() {
                             <View style={styles.buttonRow}>
                                 <View style={styles.buttonContainer}>
                                     <Button
-                                        title="📷 Take Photo"
+                                        title="Take photo"
                                         onPress={takePhoto}
                                         icon={<HugeiconsIcon icon={Camera01Icon} size={20} color={Colors.WHITE} />}
                                     />
@@ -434,7 +440,7 @@ export default function ScanLabel() {
                                 <View style={{ height: 10 }} />
                                 <View style={styles.buttonContainer}>
                                     <Button
-                                        title="🖼️ Choose Photo"
+                                        title="Choose photo"
                                         onPress={pickImage}
                                         icon={<HugeiconsIcon icon={ImageAddIcon} size={20} color={Colors.WHITE} />}
                                     />
@@ -442,7 +448,7 @@ export default function ScanLabel() {
                                 <View style={{ height: 10 }} />
                                 <View style={styles.buttonContainer}>
                                     <Button
-                                        title="🌐 Paste Image URL"
+                                        title="Paste image URL"
                                         onPress={() => setShowUrlInput(true)}
                                     />
                                 </View>
@@ -456,11 +462,19 @@ export default function ScanLabel() {
             {nutritionData && (
                 <View style={styles.nutritionCard}>
                     <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>✅ Extracted Nutrition Facts</Text>
-                        <Button
-                            title={editing ? "Done" : "✏️ Edit"}
+                        <View style={styles.cardHeaderText}>
+                            <Text style={styles.cardTitle}>Nutrition facts</Text>
+                            <Text style={styles.cardSubtitle}>
+                                {editing ? 'Adjust values below' : 'Tap Edit to correct any value'}
+                            </Text>
+                        </View>
+                        <TouchableOpacity
                             onPress={() => setEditing(!editing)}
-                        />
+                            style={styles.editChip}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.editChipText}>{editing ? 'Done' : 'Edit'}</Text>
+                        </TouchableOpacity>
                     </View>
 
                     {editing ? (
@@ -505,35 +519,47 @@ export default function ScanLabel() {
                     ) : (
                         <View style={styles.nutritionGrid}>
                             <View style={styles.nutritionItem}>
-                                <Text style={styles.nutritionValue}>{nutritionData.calories || 0}</Text>
+                                <Text style={styles.nutritionValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                                    {Math.round(Number(nutritionData.calories) || 0)}
+                                </Text>
                                 <Text style={styles.nutritionLabel}>Calories</Text>
                             </View>
                             <View style={styles.nutritionItem}>
-                                <Text style={styles.nutritionValue}>{nutritionData.protein || 0}g</Text>
+                                <Text style={styles.nutritionValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                                    {formatGrams(nutritionData.protein)}
+                                </Text>
                                 <Text style={styles.nutritionLabel}>Protein</Text>
                             </View>
                             <View style={styles.nutritionItem}>
-                                <Text style={styles.nutritionValue}>{nutritionData.carbohydrates || 0}g</Text>
+                                <Text style={styles.nutritionValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                                    {formatGrams(nutritionData.carbohydrates)}
+                                </Text>
                                 <Text style={styles.nutritionLabel}>Carbs</Text>
                             </View>
                             <View style={styles.nutritionItem}>
-                                <Text style={styles.nutritionValue}>{nutritionData.fat || 0}g</Text>
+                                <Text style={styles.nutritionValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                                    {formatGrams(nutritionData.fat)}
+                                </Text>
                                 <Text style={styles.nutritionLabel}>Fat</Text>
                             </View>
                             <View style={styles.nutritionItem}>
-                                <Text style={styles.nutritionValue}>{nutritionData.sodium || 0}mg</Text>
+                                <Text style={styles.nutritionValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                                    {Math.round(Number(nutritionData.sodium) || 0)} mg
+                                </Text>
                                 <Text style={styles.nutritionLabel}>Sodium</Text>
                             </View>
                             <View style={styles.nutritionItem}>
-                                <Text style={styles.nutritionValue}>{nutritionData.sugar || 0}g</Text>
+                                <Text style={styles.nutritionValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                                    {formatGrams(nutritionData.sugar)}
+                                </Text>
                                 <Text style={styles.nutritionLabel}>Sugar</Text>
                             </View>
                         </View>
                     )}
 
-                    <View style={{ marginTop: 20 }}>
+                    <View style={styles.sectionBelowGrid}>
                         <View style={styles.mealTypeSelector}>
-                            <Text style={styles.mealTypeLabel}>Meal Type:</Text>
+                            <Text style={styles.mealTypeLabel}>Meal type</Text>
                             <View style={styles.mealTypeButtons}>
                                 {['Breakfast', 'Lunch', 'Dinner', 'Snack'].map((type) => (
                                     <TouchableOpacity
@@ -558,7 +584,7 @@ export default function ScanLabel() {
                         {/* XAI Explanation Card */}
                         {nutritionData && user && (
                             <View style={styles.xaiCard}>
-                                <Text style={styles.xaiTitle}>💡 Impact Analysis</Text>
+                                <Text style={styles.xaiTitle}>How this fits your day</Text>
                                 {(() => {
                                     const userGoals = {
                                         calories: user.calories || 2000,
@@ -577,12 +603,24 @@ export default function ScanLabel() {
                                             {explanation?.details && Array.isArray(explanation.details) && explanation.details.length > 0 && (
                                                 <View style={styles.xaiDetails}>
                                                     {explanation.details.map((detail, idx) => (
-                                                        <Text key={idx} style={styles.xaiDetail}>{detail}</Text>
+                                                        <Text
+                                                            key={idx}
+                                                            style={[
+                                                                styles.xaiDetail,
+                                                                typeof detail === 'string' &&
+                                                                /\(high\)|daily limit/i.test(detail) &&
+                                                                styles.xaiDetailNote,
+                                                            ]}
+                                                        >
+                                                            {detail}
+                                                        </Text>
                                                     ))}
                                                 </View>
                                             )}
                                             {explanation?.warning && (
-                                                <Text style={styles.xaiWarning}>{explanation.warning}</Text>
+                                                <View style={styles.xaiWarningBox}>
+                                                    <Text style={styles.xaiWarningText}>{explanation.warning}</Text>
+                                                </View>
                                             )}
                                         </>
                                     )
@@ -590,9 +628,9 @@ export default function ScanLabel() {
                             </View>
                         )}
                         
-                        <View style={{ height: 15 }} />
+                        <View style={styles.saveSpacer} />
                         <Button
-                            title={saving ? "Saving..." : "✅ Save to Meal Plan"}
+                            title={saving ? 'Saving…' : 'Save to meal plan'}
                             onPress={async () => {
                                 if (!nutritionData) {
                                     Alert.alert('Error', 'No nutrition data to save')
@@ -745,120 +783,185 @@ const styles = StyleSheet.create({
     },
     nutritionCard: {
         backgroundColor: Colors.WHITE,
-        borderRadius: 12,
+        borderRadius: 16,
         padding: 20,
         marginTop: 20,
         marginBottom: 40,
-        elevation: 3,
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowOffset: { width: 0, height: 2 },
+        borderWidth: 1,
+        borderColor: 'rgba(20, 184, 166, 0.12)',
+        elevation: 2,
+        shadowColor: '#0f766e',
+        shadowOpacity: 0.08,
+        shadowOffset: { width: 0, height: 4 },
+        shadowRadius: 12,
     },
     cardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 20,
+        alignItems: 'flex-start',
+        marginBottom: 18,
+        gap: 12,
+    },
+    cardHeaderText: {
+        flex: 1,
+        minWidth: 0,
     },
     cardTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        flex: 1,
+        fontSize: 22,
+        fontWeight: '700',
+        color: '#0f172a',
+        letterSpacing: -0.3,
+    },
+    cardSubtitle: {
+        fontSize: 13,
+        color: '#64748b',
+        marginTop: 4,
+        lineHeight: 18,
+    },
+    editChip: {
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 20,
+        backgroundColor: 'rgba(20, 184, 166, 0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(20, 184, 166, 0.35)',
+    },
+    editChipText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.PRIMARY,
     },
     nutritionGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
+        gap: 10,
         justifyContent: 'space-between',
     },
     nutritionItem: {
-        width: '30%',
+        width: '31%',
+        flexGrow: 1,
+        maxWidth: '33%',
+        minHeight: 96,
         alignItems: 'center',
-        padding: 15,
-        backgroundColor: Colors.PRIMARY + '10',
-        borderRadius: 8,
-        marginBottom: 10,
+        justifyContent: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 8,
+        backgroundColor: 'rgba(20, 184, 166, 0.08)',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(20, 184, 166, 0.14)',
     },
     nutritionValue: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        fontSize: 22,
+        fontWeight: '700',
         color: Colors.PRIMARY,
+        textAlign: 'center',
     },
     nutritionLabel: {
-        fontSize: 12,
-        color: Colors.GRAY,
-        marginTop: 5,
+        fontSize: 11,
+        color: '#64748b',
+        marginTop: 6,
+        fontWeight: '600',
+        letterSpacing: 0.4,
+        textTransform: 'uppercase',
+    },
+    sectionBelowGrid: {
+        marginTop: 24,
     },
     editForm: {
         marginTop: 10,
     },
     mealTypeSelector: {
-        marginBottom: 10,
+        marginBottom: 4,
     },
     mealTypeLabel: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '600',
-        marginBottom: 10,
-        color: Colors.GRAY,
+        marginBottom: 12,
+        color: '#334155',
     },
     mealTypeButtons: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 8,
+        gap: 10,
     },
     mealTypeButton: {
         flex: 1,
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        backgroundColor: Colors.GRAY + '20',
+        paddingVertical: 11,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        backgroundColor: '#f1f5f9',
         alignItems: 'center',
         minWidth: '22%',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
     },
     mealTypeButtonActive: {
         backgroundColor: Colors.PRIMARY,
+        borderColor: Colors.PRIMARY,
     },
     mealTypeButtonText: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '600',
-        color: Colors.GRAY,
+        color: '#475569',
     },
     mealTypeButtonTextActive: {
         color: Colors.WHITE,
     },
     xaiCard: {
-        marginTop: 15,
-        padding: 15,
-        backgroundColor: Colors.PRIMARY + '10',
-        borderRadius: 10,
-        borderLeftWidth: 4,
-        borderLeftColor: Colors.PRIMARY,
+        marginTop: 20,
+        padding: 16,
+        backgroundColor: 'rgba(20, 184, 166, 0.06)',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(20, 184, 166, 0.18)',
     },
     xaiTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 8,
-        color: Colors.PRIMARY,
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 10,
+        color: '#0f766e',
     },
     xaiMessage: {
         fontSize: 14,
-        color: Colors.GRAY,
-        marginBottom: 8,
-        lineHeight: 20,
+        color: '#475569',
+        marginBottom: 6,
+        lineHeight: 21,
     },
     xaiDetails: {
-        marginTop: 8,
-        marginBottom: 8,
+        marginTop: 6,
+        marginBottom: 4,
+        gap: 6,
     },
     xaiDetail: {
-        fontSize: 12,
-        color: Colors.GRAY,
-        marginBottom: 4,
-    },
-    xaiWarning: {
         fontSize: 13,
-        color: Colors.RED,
+        color: '#64748b',
+        lineHeight: 20,
+    },
+    xaiDetailNote: {
+        color: '#b45309',
+        backgroundColor: 'rgba(180, 83, 9, 0.08)',
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        overflow: 'hidden',
+    },
+    xaiWarningBox: {
+        marginTop: 10,
+        padding: 12,
+        borderRadius: 10,
+        backgroundColor: 'rgba(220, 38, 38, 0.06)',
+        borderWidth: 1,
+        borderColor: 'rgba(220, 38, 38, 0.2)',
+    },
+    xaiWarningText: {
+        fontSize: 13,
+        color: '#b91c1c',
         fontWeight: '600',
-        marginTop: 8,
+        lineHeight: 19,
+    },
+    saveSpacer: {
+        height: 20,
     },
 })
 

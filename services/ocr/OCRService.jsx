@@ -495,6 +495,41 @@ const extractTextWithAzureVision = async (base64Image) => {
     }
 };
 
+/** Tier 1.5: Convex + OpenAI vision — nutrition JSON in one step (Expo Go friendly). */
+const tryOpenAIVisionNutrition = async (base64Image) => {
+    try {
+        const convex = getConvexClient();
+        if (!convex) {
+            ocrLog('ℹ️ OpenAI Vision skipped: no Convex client');
+            return null;
+        }
+        let mimeType = 'image/jpeg';
+        if (typeof base64Image === 'string') {
+            const m = base64Image.match(/^data:(image\/[a-z0-9.+-]+);base64,/i);
+            if (m) mimeType = m[1];
+        }
+        const visionStartMs = Date.now();
+        const result = await convex.action(api.Ai.ExtractNutritionFromImageAI, {
+            base64Image,
+            mimeType,
+        });
+        ocrLog('✅ OpenAI Vision tier finished', {
+            ms: Date.now() - visionStartMs,
+            calories: result?.calories,
+        });
+        const hasSignal =
+            result &&
+            (result.calories > 0 ||
+                result.protein > 0 ||
+                result.carbohydrates > 0 ||
+                result.fat > 0);
+        return hasSignal ? result : null;
+    } catch (err) {
+        ocrWarn('⚠️ OpenAI Vision tier failed:', err?.message || err);
+        return null;
+    }
+};
+
 // Parse nutrition data from extracted text OR directly from image
 export const ExtractNutritionFromLabel = async (imageUri) => {
     try {
@@ -546,16 +581,13 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
         let lastError = null;
         let ocrTierUsed = 'none';
         
-        // PRIMARY: Try LOCAL OCR first (works offline, no API keys, unlimited)
-        // This is the preferred method - always try it first if available
+        /* Tier 1 — ML Kit (local, dev/production native builds only). Commented out for Expo Go demo; uncomment to restore.
         if (localOcrAvailable) {
             console.log('[OCR] Trying tier 1: local_mlkit');
             try {
-                // For local OCR, use preprocessed image for better accuracy
                 const imagePath = isRemoteUrl(imageUri)
                     ? await downloadImageAsLocalFile(imageUri)
-                    : processedImageUri; // Use preprocessed image
-                
+                    : processedImageUri;
                 const localStartMs = Date.now();
                 extractedText = await ExtractTextLocally(imagePath);
                 ocrTierUsed = 'local_mlkit';
@@ -564,8 +596,6 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
                     chars: extractedText?.length || 0
                 });
                 console.log('[OCR] Success with tier 1: local_mlkit, chars:', (extractedText || '').length);
-                
-                // If local OCR succeeded, continue; if insufficient, fall through to Tier 2
                 if (!extractedText || extractedText.trim().length < 10) {
                     extractedText = '';
                     throw new Error('Local OCR returned insufficient text');
@@ -573,13 +603,46 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
             } catch (localError) {
                 ocrWarn('⚠️ Local OCR failed, using API fallback...', localError.message);
                 lastError = localError;
-                extractedText = ''; // Ensure Tier 2 will run
+                extractedText = '';
             }
         } else {
-            // Expo Go / missing native module: skip silently to Tier 2
             console.log('[OCR] Trying tier 1: local_mlkit (skipped - unavailable)');
         }
-        
+        */
+        console.log('[OCR] Tier 1 local_mlkit skipped (demo: use OpenAI Vision tier 1.5)');
+
+        // Tier 1.5: OpenAI vision — direct nutrition JSON (Convex + OPENAI_API_KEY)
+        if (!extractedText || extractedText.trim().length < 10) {
+            console.log('[OCR] Trying tier 1.5: openai_vision');
+            try {
+                const visionResult = await tryOpenAIVisionNutrition(base64Image);
+                if (visionResult) {
+                    ocrTierUsed = 'openai_vision';
+                    ocrLog('✅ Nutrition extracted via OpenAI Vision (no text OCR)', visionResult);
+                    console.log('[OCR] Success with tier 1.5: openai_vision');
+                    return {
+                        calories: visionResult.calories || 0,
+                        protein: visionResult.protein || 0,
+                        carbohydrates: visionResult.carbohydrates || 0,
+                        fat: visionResult.fat || 0,
+                        sodium: visionResult.sodium || 0,
+                        sugar: visionResult.sugar || 0,
+                        servingSize: visionResult.servingSize || '1 serving',
+                        servingsPerContainer: visionResult.servingsPerContainer || 1,
+                        __debug: {
+                            ocrTierUsed,
+                            localOcrAvailable,
+                            lastError: lastError?.message || null,
+                            ms: Date.now() - flowStartMs,
+                        },
+                    };
+                }
+            } catch (visionErr) {
+                ocrWarn('⚠️ OpenAI Vision tier error, continuing to OCR.space...', visionErr?.message);
+                lastError = visionErr;
+            }
+        }
+
         // FALLBACK: Try FREE OCR.space (25k/month, no API key needed)
         if (!extractedText || extractedText.trim().length < 10) {
             console.log('[OCR] Trying tier 2: ocr_space');

@@ -76,8 +76,8 @@ function Home() {
         setRefreshData(Date.now())
     }, [setRefreshData])
 
-    // Memoize header component to prevent re-renders - optimized for faster rendering
-    const headerComponent = useMemo(() => (
+    // Fresh header each render so Convex subscriptions (e.g. TodayProgress) are not stuck behind a stale memoized tree.
+    const listHeader = (
         <View style={{
             paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 10) : Math.max(insets.top + 10, 20),
             paddingHorizontal: 20,
@@ -89,7 +89,7 @@ function Home() {
             <WaterIntakeTracker />
             <AdaptiveInsights />
         </View>
-    ), [insets.top, colors.BACKGROUND])
+    )
 
     // Memoize content container style
     const contentContainerStyle = useMemo(() => ({
@@ -111,7 +111,7 @@ function Home() {
                 renderItem={() => null}
                 onRefresh={handleRefresh}
                 refreshing={loading}
-                ListHeaderComponent={headerComponent}
+                ListHeaderComponent={listHeader}
                 contentContainerStyle={contentContainerStyle}
                 removeClippedSubviews={true}
                 maxToRenderPerBatch={10}

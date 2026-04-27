@@ -61,14 +61,20 @@ export default function SignUp() {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, emailValidation.value, passwordValidation.value);
             const user = userCredential.user;
-            console.log(user)
+            console.log('[SignUp] Firebase user created:', {
+                uid: user?.uid,
+                email: user?.email,
+            });
             if (user) {
                 const result = await createNewUser({
                     name: nameValidation.value,
                     email: emailValidation.value
                 });
 
-                    console.log(result);
+                    console.log('[SignUp] Convex createNewUser:', {
+                        _id: result?._id,
+                        email: result?.email,
+                    });
                     setUser(result);
                     setNewUserData(result); // Store for onboarding completion
                     
@@ -82,7 +88,10 @@ export default function SignUp() {
                     
                     // Show onboarding immediately after account creation
                     console.log('[SignUp] ✅ Account created successfully!');
-                    console.log('[SignUp] ✅ User data:', result);
+                    console.log('[SignUp] ✅ User data created:', {
+                        _id: result?._id,
+                        email: result?.email,
+                    });
                     console.log('[SignUp] ✅ Setting showOnboarding to TRUE - onboarding will show NOW');
                     
                     // Set state immediately - React will handle the update

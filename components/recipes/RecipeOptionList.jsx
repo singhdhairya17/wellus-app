@@ -90,7 +90,7 @@ export default function RecipeOptionList({ recipeOption }) {
             let showRetry = false;
             
             if (e.message?.includes('429') || e.message?.includes('Rate limit') || e.message?.includes('RATE_LIMIT')) {
-                errorMessage = '⚠️ AI Service Rate Limited\n\n';
+                errorMessage = 'AI service rate limited\n\n';
                 errorMessage += 'The AI service is currently experiencing high demand. ';
                 errorMessage += 'We\'ve automatically retried 3 times, but the service is still unavailable.\n\n';
                 errorMessage += 'Please wait 30-60 seconds and try again.';

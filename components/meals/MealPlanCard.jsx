@@ -5,7 +5,7 @@ import * as FileSystem from 'expo-file-system/legacy'
 import { useTheme } from '../../context/ThemeContext'
 import { LinearGradient } from 'expo-linear-gradient'
 import { HugeiconsIcon } from '@hugeicons/react-native'
-import { CheckmarkSquare02Icon, SquareIcon, ChevronDownIcon, ChevronUpIcon } from '@hugeicons/core-free-icons'
+import { CheckmarkSquare02Icon, SquareIcon } from '@hugeicons/core-free-icons'
 import { useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { RefreshDataContext } from '../../context/RefreshDataContext'
@@ -29,13 +29,17 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 function MealPlanCard({ mealPlanInfo, index = 0 }) {
     const { colors } = useTheme()
     const updateStatus = useMutation(api.MealPlan.updateStatus);
-    const { refreshData, setRefreshData } = useContext(RefreshDataContext)
+    const { setRefreshData } = useContext(RefreshDataContext)
     const checkScale = useSharedValue(1)
     const cardScale = useSharedValue(1)
     const [imageError, setImageError] = useState(false)
     const [isExpanded, setIsExpanded] = useState(false)
     const [showDetailModal, setShowDetailModal] = useState(false)
     const expandHeight = useSharedValue(0)
+    const isCompleted = mealPlanInfo?.mealPlan?.status === true;
+    const isScannedFood = mealPlanInfo?.mealPlan?.isScannedFood === true;
+    const recipe = mealPlanInfo?.recipe;
+    const jsonData = recipe?.jsonData || {};
     
     // Get image URI for scanned foods - prioritize mealPlan.imageUri for scanned foods
     const imageUri = isScannedFood 
@@ -154,11 +158,6 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
             })
         }
     }
-
-    const isCompleted = mealPlanInfo?.mealPlan?.status === true;
-    const isScannedFood = mealPlanInfo?.mealPlan?.isScannedFood === true;
-    const recipe = mealPlanInfo?.recipe;
-    const jsonData = recipe?.jsonData || {};
 
     const checkAnimatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: checkScale.value }],
@@ -458,7 +457,13 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
                                     }}>
                                         View Full Details
                                     </Text>
-                                    <HugeiconsIcon icon={ChevronUpIcon} size={16} color={colors.PRIMARY} />
+                                    <Text style={{
+                                        fontSize: 16,
+                                        fontWeight: '800',
+                                        color: colors.PRIMARY
+                                    }}>
+                                        ›
+                                    </Text>
                                 </View>
                             </Link>
                         </View>

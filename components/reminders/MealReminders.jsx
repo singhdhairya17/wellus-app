@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { HugeiconsIcon } from '@hugeicons/react-native'
 import { BellIcon } from '@hugeicons/core-free-icons'
 import Animated, { FadeInDown } from 'react-native-reanimated'
-import * as Notifications from 'expo-notifications'
+import { requestPermissionsAsyncSafe } from '../../utils/expoNotificationsGate'
 
 const MEAL_TYPES = [
     { key: 'Breakfast', defaultHour: 8, defaultMinute: 0 },
@@ -61,7 +61,7 @@ export default function MealReminders() {
             
             // Request notification permissions if enabling
             if (!isEnabled) {
-                const { status } = await Notifications.requestPermissionsAsync()
+                const { status } = await requestPermissionsAsyncSafe()
                 if (status !== 'granted') {
                     Alert.alert('Permission Required', 'Please enable notifications in settings to receive meal reminders.')
                 }

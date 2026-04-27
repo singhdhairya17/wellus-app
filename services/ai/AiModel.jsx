@@ -1,33 +1,7 @@
 import axios from "axios"
-import OpenAI from "openai"
 import { logger } from "../../utils/logger"
-
-// Detect which provider to use based on available API keys
-const useOpenAI = !!process.env.EXPO_PUBLIC_OPENAI_API_KEY
-const useOpenRouter = !!process.env.EXPO_PUBLIC_OPENROUTER_API_KEY
-
-let openai
-
-if (useOpenAI) {
-    // Use OpenAI (ChatGPT, GPT-4, etc.)
-    openai = new OpenAI({
-        apiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
-        dangerouslyAllowBrowser: true
-    })
-} else if (useOpenRouter) {
-    // Use OpenRouter (Gemini, Claude, etc.)
-    openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: process.env.EXPO_PUBLIC_OPENROUTER_API_KEY,
-        dangerouslyAllowBrowser: true
-    })
-} else {
-    // No API key - will use manual fallback
-    openai = null
-}
-
-// Model selection based on provider
-const AIMODELNAME = useOpenAI ? "gpt-4o-mini" : "google/gemini-2.0-flash-exp:free"
+import { getConvexClient } from "../../utils/convexClient"
+import { api } from "../../convex/_generated/api"
 
 // Helper: Check if error is rate limit related
 const isRateLimitError = (error) => {
@@ -62,18 +36,12 @@ const retryWithBackoff = async (fn, maxRetries = 3, initialDelay = 2000) => {
 }
 
 export const CalculateCaloriesAI = async (PROMPT) => {
-    if (!openai) {
-        throw new Error('RATE_LIMIT_FALLBACK: No API key available. Use manual calculation.')
-    }
-    
     try {
-        return await openai.chat.completions.create({
-            model: AIMODELNAME,
-            messages: [
-                { role: "user", content: PROMPT }
-            ],
-            response_format: "json_object"
-        })
+        const convex = getConvexClient()
+        if (!convex) {
+            throw new Error('RATE_LIMIT_FALLBACK: Missing EXPO_PUBLIC_CONVEX_URL. Use manual calculation.')
+        }
+        return await convex.action(api.Ai.CalculateCaloriesAI, { prompt: PROMPT })
     } catch (error) {
         // Check if it's a rate limit error
         if (isRateLimitError(error)) {
@@ -85,20 +53,14 @@ export const CalculateCaloriesAI = async (PROMPT) => {
 }
 
 export const GenerateAIRecipe = async (PROMPT) => {
-    if (!openai) {
-        throw new Error('RATE_LIMIT_FALLBACK: No API key available. Recipe generation unavailable.')
-    }
-    
     // Retry with exponential backoff for rate limits
     return await retryWithBackoff(async () => {
         try {
-            return await openai.chat.completions.create({
-                model: AIMODELNAME,
-                messages: [
-                    { role: "user", content: PROMPT }
-                ],
-                response_format: "json_object"
-            })
+            const convex = getConvexClient()
+            if (!convex) {
+                throw new Error('RATE_LIMIT_FALLBACK: Missing EXPO_PUBLIC_CONVEX_URL. Recipe generation unavailable.')
+            }
+            return await convex.action(api.Ai.GenerateAIRecipe, { prompt: PROMPT })
         } catch (error) {
             // Check if it's a rate limit error
             if (isRateLimitError(error)) {

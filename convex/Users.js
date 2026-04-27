@@ -45,6 +45,14 @@ export const GetUser = query({
     }
 })
 
+/** Used from actions (which cannot use ctx.db) to verify a user id exists. */
+export const GetUserById = query({
+    args: { uid: v.id("users") },
+    handler: async (ctx, args) => {
+        return await ctx.db.get(args.uid);
+    },
+})
+
 export const UpdateUserPref = mutation({
     args: {
         uid: v.id('users'),

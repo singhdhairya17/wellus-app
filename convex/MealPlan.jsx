@@ -1,6 +1,18 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 
+/** Coerce stored macro values to finite numbers (JSON / AI may use strings). */
+const num = (v) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Planned meals count for daily totals unless the user explicitly skipped them (status === false).
+ * New rows from CreateMealPlan have status undefined until the user toggles the checkbox.
+ */
+const mealPlansForIntake = (rows) => rows.filter((mp) => mp.status !== false)
+
 export const CreateMealPlan = mutation({
     args: {
         recipeId: v.id('recipes'),
@@ -259,15 +271,15 @@ export const GetTotalCaloriesConsumed = query({
         uid: v.id('users')
     },
     handler: async (ctx, args) => {
-        const mealPlanResult = await ctx.db.query('mealPlan')
+        const mealPlanRows = await ctx.db.query('mealPlan')
             .filter(q =>
                 q.and(
                     q.eq(q.field('uid'), args.uid),
-                    q.eq(q.field('date'), args.date),
-                    q.eq(q.field('status'), true)
+                    q.eq(q.field('date'), args.date)
                 )
             )
             .collect();
+        const mealPlanResult = mealPlansForIntake(mealPlanRows);
 
         const scannedFoodsResult = await ctx.db.query('scannedFoods')
             .filter(q =>
@@ -278,21 +290,16 @@ export const GetTotalCaloriesConsumed = query({
             )
             .collect();
 
-        // Calculate calories from meal plans (recipes)
         let totalCaloriesFromMeals = 0;
         for (const mealPlan of mealPlanResult) {
             const recipe = await ctx.db.get(mealPlan.recipeId);
-            if (recipe?.jsonData?.calories) {
-                totalCaloriesFromMeals += recipe.jsonData.calories;
-            } else if (mealPlan.calories) {
-                // Fallback to mealPlan.calories if recipe doesn't have it
-                totalCaloriesFromMeals += mealPlan.calories;
-            }
+            totalCaloriesFromMeals += num(
+                recipe?.jsonData?.calories ?? mealPlan.calories
+            );
         }
 
-        // Calculate calories from scanned foods
         const totalCaloriesFromScanned = scannedFoodsResult?.reduce((sum, food) => {
-            return sum + (food.calories ?? 0);
+            return sum + num(food.calories);
         }, 0) || 0;
 
         return totalCaloriesFromMeals + totalCaloriesFromScanned;
@@ -443,18 +450,16 @@ export const GetDailyMacronutrients = query({
         uid: v.id('users')
     },
     handler: async (ctx, args) => {
-        // Get from meal plans (recipes)
-        const mealPlans = await ctx.db.query('mealPlan')
+        const mealPlanRows = await ctx.db.query('mealPlan')
             .filter(q =>
                 q.and(
                     q.eq(q.field('uid'), args.uid),
-                    q.eq(q.field('date'), args.date),
-                    q.eq(q.field('status'), true)
+                    q.eq(q.field('date'), args.date)
                 )
             )
             .collect();
+        const mealPlans = mealPlansForIntake(mealPlanRows);
 
-        // Get from scanned foods
         const scannedFoods = await ctx.db.query('scannedFoods')
             .filter(q =>
                 q.and(
@@ -464,7 +469,6 @@ export const GetDailyMacronutrients = query({
             )
             .collect();
 
-        // Calculate totals
         let totalCalories = 0;
         let totalProtein = 0;
         let totalCarbs = 0;
@@ -472,27 +476,25 @@ export const GetDailyMacronutrients = query({
         let totalSodium = 0;
         let totalSugar = 0;
 
-        // From meal plans (recipes)
         for (const mealPlan of mealPlans) {
             const recipe = await ctx.db.get(mealPlan.recipeId);
-            if (recipe?.jsonData?.calories) {
-                // Use recipe calories (primary source)
-                totalCalories += recipe.jsonData.calories;
-                totalProtein += recipe.jsonData.proteins || 0;
-            } else if (mealPlan.calories) {
-                // Fallback to mealPlan.calories if recipe doesn't have it
-                totalCalories += mealPlan.calories;
-            }
+            totalCalories += num(recipe?.jsonData?.calories ?? mealPlan.calories);
+            totalProtein += num(
+                recipe?.jsonData?.proteins ?? recipe?.jsonData?.protein
+            );
+            totalCarbs += num(recipe?.jsonData?.carbohydrates);
+            totalFat += num(recipe?.jsonData?.fat);
+            totalSodium += num(recipe?.jsonData?.sodium);
+            totalSugar += num(recipe?.jsonData?.sugar);
         }
 
-        // From scanned foods
         for (const food of scannedFoods) {
-            totalCalories += food.calories || 0;
-            totalProtein += food.protein || 0;
-            totalCarbs += food.carbohydrates || 0;
-            totalFat += food.fat || 0;
-            totalSodium += food.sodium || 0;
-            totalSugar += food.sugar || 0;
+            totalCalories += num(food.calories);
+            totalProtein += num(food.protein);
+            totalCarbs += num(food.carbohydrates);
+            totalFat += num(food.fat);
+            totalSodium += num(food.sodium);
+            totalSugar += num(food.sugar);
         }
 
         return {

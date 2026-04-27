@@ -120,7 +120,7 @@ export const GenerateMacroExplanation = (macroName, current, goal, unit) => {
         case 'sodium':
             healthImportance = 'Sodium maintains fluid balance, but excess can raise blood pressure and cause health issues.';
             if (percentage >= 100) {
-                message = `⚠️ Exceeded limit by ${over.toFixed(0)} ${unit}!`;
+                message = `Exceeded limit by ${over.toFixed(0)} ${unit}.`;
                 status = 'danger';
                 recommendation = 'Avoid high-sodium foods. Drink more water.';
             } else if (percentage >= 80) {
@@ -141,7 +141,7 @@ export const GenerateMacroExplanation = (macroName, current, goal, unit) => {
         case 'sugar':
             healthImportance = 'Natural sugars from fruits provide energy, but excess added sugar can lead to weight gain and health problems.';
             if (percentage >= 100) {
-                message = `⚠️ Exceeded limit by ${over.toFixed(0)} ${unit}!`;
+                message = `Exceeded limit by ${over.toFixed(0)} ${unit}.`;
                 status = 'danger';
                 recommendation = 'Avoid sugary foods and drinks.';
             } else if (percentage >= 80) {
@@ -213,10 +213,10 @@ export const GenerateFoodItemExplanation = (foodData, userGoals, currentIntake) 
         explanations.push(`Fat: ${fatImpact}% of daily goal`);
     }
     if (sodium > 0 && sodiumImpact > 10) {
-        explanations.push(`⚠️ Sodium: ${sodiumImpact}% of daily limit`);
+        explanations.push(`Sodium: ${sodiumImpact}% of daily limit (high)`);
     }
     if (sugar > 0 && sugarImpact > 10) {
-        explanations.push(`⚠️ Sugar: ${sugarImpact}% of daily limit`);
+        explanations.push(`Sugar: ${sugarImpact}% of daily limit (high)`);
     }
 
     // Check if adding this would exceed limits
@@ -226,11 +226,11 @@ export const GenerateFoodItemExplanation = (foodData, userGoals, currentIntake) 
 
     let warning = '';
     if (newCalories > (userGoals.calories || 2000)) {
-        warning = '⚠️ Adding this will exceed your daily calorie goal.';
+        warning = 'Adding this will exceed your daily calorie goal.';
     } else if (newSodium > (userGoals.sodium || 2300)) {
-        warning = '⚠️ Adding this will exceed your daily sodium limit.';
+        warning = 'Adding this will exceed your daily sodium limit.';
     } else if (newSugar > (userGoals.sugar || 50)) {
-        warning = '⚠️ Adding this will exceed your daily sugar limit.';
+        warning = 'Adding this will exceed your daily sugar limit.';
     }
 
     return {

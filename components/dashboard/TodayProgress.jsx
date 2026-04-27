@@ -1,228 +1,83 @@
 import { View, Text } from 'react-native'
-import React, { useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import React, { useContext, useEffect, useMemo } from 'react'
 import moment from 'moment'
 import { useTheme } from '../../context/ThemeContext'
 import { UserContext } from '../../context/UserContext'
-import { useConvex } from 'convex/react'
+import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { RefreshDataContext } from '../../context/RefreshDataContext'
 import { LinearGradient } from 'expo-linear-gradient'
 import Animated, { 
     useSharedValue, 
     useAnimatedStyle, 
     withTiming, 
-    withSpring,
-    withSequence,
-    withDelay,
     Easing
 } from 'react-native-reanimated'
 import { triggerHaptic } from '../../utils/haptics'
-import { logger } from '../../utils/logger'
 
 export default function TodayProgress() {
     const { user } = useContext(UserContext)
     const { colors } = useTheme()
-    const convex = useConvex();
-    const [totalCaloriesConsumed, setTotalCaloriesConsumed] = useState(0);
-    const { refreshData } = useContext(RefreshDataContext)
-    
-    // Use refs to prevent multiple simultaneous requests
-    const isLoadingRef = useRef(false);
-    const lastRefreshRef = useRef(null);
-    const lastUserIdRef = useRef(null);
-    const lastFetchTimeRef = useRef(0);
-    const lastCaloriesRef = useRef(null); // Track last set calories to prevent duplicate updates
-    const currentRequestIdRef = useRef(null); // Track current request ID
-    const hasInitializedRef = useRef(false); // Track if component has initialized
-    const timeoutIdRef = useRef(null); // Track scheduled timeout to prevent duplicates
-    
-    // Animated values - initialize once
-    const progressWidth = useSharedValue(0);
-    const calorieCount = useSharedValue(0);
 
-    // Memoize user ID to prevent unnecessary re-renders
-    const userId = useMemo(() => user?._id, [user?._id]);
+    const progressWidth = useSharedValue(0)
+    const calorieCount = useSharedValue(0)
 
-    const GetTotalCaloriesConsumed = useCallback(async () => {
-        if (!userId) return;
-        
-        const now = Date.now();
-        const timeSinceLastFetch = now - lastFetchTimeRef.current;
-        
-        // Create a stable request key based on userId and refreshData (not timestamp)
-        const requestKey = `${userId}-${refreshData || 'null'}`;
-        
-        // Prevent multiple simultaneous requests
-        if (isLoadingRef.current) {
-            logger.debug('[TodayProgress] Request already in progress, skipping...');
-            return;
-        }
-        
-        // If this exact request (same userId + refreshData) is already in progress, skip
-        if (currentRequestIdRef.current === requestKey) {
-            logger.debug('[TodayProgress] Duplicate request detected, skipping...');
-            return;
-        }
-        
-        // If userId hasn't changed and refreshData hasn't changed, skip
-        if (lastUserIdRef.current === userId && lastRefreshRef.current === refreshData) {
-            // Only skip if we fetched recently (within 3 seconds) to prevent rapid re-renders
-            if (timeSinceLastFetch < 3000) {
-                logger.debug('[TodayProgress] Already fetched for this userId and refreshData, skipping...');
-                return;
-            }
-        }
-        
-        // Set loading flag IMMEDIATELY to prevent duplicate calls
-        isLoadingRef.current = true;
-        currentRequestIdRef.current = requestKey;
-        lastRefreshRef.current = refreshData;
-        lastUserIdRef.current = userId;
-        lastFetchTimeRef.current = now;
-        
-        try {
-            logger.debug('[TodayProgress] Fetching calories...', requestKey, now);
-            const result = await convex.query(api.MealPlan.GetTotalCaloriesConsumed, {
-                date: moment().format('DD/MM/YYYY'),
-                uid: userId
-            })
-            
-            const newCalories = result || 0;
-            
-            // Only update state if data actually changed to prevent duplicate re-renders
-            if (lastCaloriesRef.current !== newCalories) {
-                lastCaloriesRef.current = newCalories;
-                setTotalCaloriesConsumed(newCalories);
-                logger.debug('[TodayProgress] Calories fetched and updated successfully', requestKey);
-            } else {
-                logger.debug('[TodayProgress] Calories unchanged, skipping state update', requestKey);
-            }
-        } catch (error) {
-            logger.error('[TodayProgress] Error fetching calories:', error);
-        } finally {
-            // Reset immediately for better performance (no delay needed)
-            isLoadingRef.current = false;
-            currentRequestIdRef.current = null;
-        }
-    }, [userId, convex, refreshData]);
+    const userId = useMemo(() => user?._id, [user?._id])
+    const todayDate = moment().format('DD/MM/YYYY')
 
-    useEffect(() => {
-        if (!userId) return;
-        
-        // Skip if timeout is already scheduled (prevents duplicate scheduling from React StrictMode)
-        if (timeoutIdRef.current) {
-            if (__DEV__) {
-                console.log('[TodayProgress] Timeout already scheduled, skipping duplicate...');
-            }
-            return;
-        }
-        
-        // Skip if we've already initialized and nothing has changed
-        if (hasInitializedRef.current && 
-            lastUserIdRef.current === userId && 
-            lastRefreshRef.current === refreshData) {
-            return;
-        }
-        
-        // Skip if already loading (prevents duplicate scheduling)
-        if (isLoadingRef.current) {
-            logger.debug('[TodayProgress] Already loading, skipping timeout schedule...');
-            return;
-        }
-        
-        // Create request key immediately and set it to prevent duplicate scheduling
-        const requestKey = `${userId}-${refreshData || 'null'}`;
-        
-        // If this exact request is already scheduled, skip
-        if (currentRequestIdRef.current === requestKey) {
-            logger.debug('[TodayProgress] Request already scheduled, skipping duplicate...');
-            return;
-        }
-        
-        // Set request ID immediately to prevent duplicate scheduling
-        currentRequestIdRef.current = requestKey;
-        
-        // Use a longer timeout to debounce rapid calls and prevent React StrictMode double calls
-        timeoutIdRef.current = setTimeout(() => {
-            // Double-check before calling (in case component unmounted or dependencies changed)
-            // Also check if this request is still the current one (prevents stale callbacks)
-            if (userId && !isLoadingRef.current && currentRequestIdRef.current === requestKey) {
-                hasInitializedRef.current = true;
-                GetTotalCaloriesConsumed();
-            } else {
-                logger.debug('[TodayProgress] Timeout callback skipped - request no longer current');
-            }
-            timeoutIdRef.current = null;
-        }, 250); // Increased debounce time to handle React StrictMode
-        
-        return () => {
-            if (timeoutIdRef.current) {
-                clearTimeout(timeoutIdRef.current);
-                timeoutIdRef.current = null;
-            }
-            // Don't clear currentRequestIdRef here - let it be cleared in the finally block
-        };
-    }, [userId, refreshData, GetTotalCaloriesConsumed])
-    
-    // Reset lastCaloriesRef and initialization flag when userId changes to allow fresh data
-    useEffect(() => {
-        if (userId && lastUserIdRef.current !== userId) {
-            lastCaloriesRef.current = null;
-            hasInitializedRef.current = false;
-        }
-    }, [userId])
+    const totalCaloriesRaw = useQuery(
+        api.MealPlan.GetTotalCaloriesConsumed,
+        userId ? { date: todayDate, uid: userId } : 'skip'
+    )
+    const totalCaloriesConsumed = totalCaloriesRaw ?? 0
+    const caloriesGoal = Number(user?.calories) || 2000
 
     const percentage = useMemo(() => 
-        Math.min((totalCaloriesConsumed / (user?.calories || 1)) * 100, 100),
-        [totalCaloriesConsumed, user?.calories]
-    );
+        Math.min((totalCaloriesConsumed / caloriesGoal) * 100, 100),
+        [totalCaloriesConsumed, caloriesGoal]
+    )
     
     const progressColor = useMemo(() => 
         percentage >= 100 ? colors.RED : percentage >= 80 ? colors.YELLOW : colors.GREEN,
         [percentage, colors]
-    );
+    )
 
-    // Animate progress bar - only when values change
     useEffect(() => {
         progressWidth.value = withTiming(percentage, {
             duration: 1200,
             easing: Easing.out(Easing.cubic),
-        });
+        })
         
-        // Animate calorie count
         calorieCount.value = withTiming(totalCaloriesConsumed, {
             duration: 1000,
             easing: Easing.out(Easing.ease),
-        });
+        })
 
-        // Haptic feedback on milestones
         if (percentage >= 100) {
-            triggerHaptic.success();
+            triggerHaptic.success()
         } else if (percentage >= 80) {
-            triggerHaptic.warning();
+            triggerHaptic.warning()
         }
-    }, [totalCaloriesConsumed, percentage, progressWidth, calorieCount]);
+    }, [totalCaloriesConsumed, percentage, progressWidth, calorieCount])
 
     const progressAnimatedStyle = useAnimatedStyle(() => ({
         width: `${progressWidth.value}%`,
-    }), []);
+    }), [])
 
     const getMotivationalMessage = () => {
-        if (percentage >= 100) return { text: "Goal achieved! 🎉", color: colors.GREEN };
-        if (percentage >= 80) return { text: "Almost there! 💪", color: colors.YELLOW };
-        if (percentage >= 50) return { text: "You're doing great! 🎯", color: colors.PRIMARY };
-        return { text: "Keep going!", color: colors.PRIMARY };
-    };
+        if (percentage >= 100) return { text: "Goal achieved! 🎉", color: colors.GREEN }
+        if (percentage >= 80) return { text: "Almost there! 💪", color: colors.YELLOW }
+        if (percentage >= 50) return { text: "You're doing great! 🎯", color: colors.PRIMARY }
+        return { text: "Keep going!", color: colors.PRIMARY }
+    }
 
-    const motivation = getMotivationalMessage();
+    const motivation = getMotivationalMessage()
 
-    // Memoize gradient colors
     const gradientColors = useMemo(() => 
         colors.isDark 
             ? [colors.CARD, colors.SURFACE, colors.CARD] 
             : ['#FFFFFF', '#F8F9FA', '#FFFFFF'],
         [colors.isDark, colors.CARD, colors.SURFACE]
-    );
+    )
 
     return (
         <View>
@@ -244,7 +99,6 @@ export default function TodayProgress() {
                     borderColor: colors.BORDER,
                     overflow: 'hidden'
                 }}>
-            {/* Decorative gradient overlay */}
             <View style={{
                 position: 'absolute',
                 top: -50,
@@ -316,7 +170,7 @@ export default function TodayProgress() {
                     fontWeight: '600',
                     color: colors.TEXT_SECONDARY,
                     letterSpacing: 0.3
-                }}>of {user?.calories} kcal</Text>
+                }}>of {caloriesGoal} kcal</Text>
             </View>
 
             <View style={{

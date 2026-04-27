@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { ExtractNutritionFromLabel } from '../../services/ocr/OCRService'
+import { logger } from '../../utils/logger'
 import Button from '../../components/common/shared/Button'
 import { useTheme } from '../../context/ThemeContext'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -83,7 +84,9 @@ export default function Scan() {
         })
 
         if (!result.canceled) {
-            setImage(result.assets[0].uri)
+            const uri = result.assets[0].uri
+            logger.log('🖼️ Image selected from library:', uri)
+            setImage(uri)
             setNutritionData(null)
         }
     }
@@ -102,7 +105,9 @@ export default function Scan() {
         })
 
         if (!result.canceled) {
-            setImage(result.assets[0].uri)
+            const uri = result.assets[0].uri
+            logger.log('📸 Photo captured:', uri)
+            setImage(uri)
             setNutritionData(null)
         }
     }
@@ -120,6 +125,7 @@ export default function Scan() {
             return
         }
 
+        logger.log('🌐 Image URL loaded:', imageUrl)
         setImage(imageUrl)
         setImageUrl('')
         setShowUrlInput(false)
@@ -134,8 +140,18 @@ export default function Scan() {
 
         setLoading(true)
         try {
+            const startMs = Date.now()
+            logger.log('🔎 Scan started:', {
+                source: image.startsWith('http') ? 'remote_url' : 'local_file',
+                imagePreview: image?.substring?.(0, 80),
+            })
             const data = await ExtractNutritionFromLabel(image)
             setNutritionData(data)
+            logger.log('✅ Scan completed:', {
+                ms: Date.now() - startMs,
+                dataPreview: data,
+                debug: data?.__debug,
+            })
             
             // Check if data is empty (all zeros) - means OCR failed, need manual entry
             const isEmpty = data.calories === 0 && data.protein === 0 && data.carbohydrates === 0 && 
@@ -166,6 +182,7 @@ export default function Scan() {
             }
         } catch (error) {
             console.error(error)
+            logger.error('❌ Scan failed (critical):', error?.message || error)
             
             // Only show error for critical failures (image processing issues)
             // For OCR failures, ExtractNutritionFromLabel now returns empty data instead of throwing
@@ -445,7 +462,7 @@ export default function Scan() {
                         <View style={styles.cardHeader}>
                             <View>
                                 <Text style={[styles.cardTitle, { color: colors.TEXT }]}>
-                                    {editing ? '✏️ Enter Nutrition Facts' : '✅ Nutrition Facts'}
+                                    {editing ? 'Enter nutrition facts' : 'Nutrition facts'}
                                 </Text>
                                 {!editing && (
                                     <TouchableOpacity 
@@ -606,7 +623,7 @@ export default function Scan() {
                                 backgroundColor: colors.PRIMARY + '15',
                                 borderLeftColor: colors.PRIMARY
                             }]}>
-                                <Text style={[styles.xaiTitle, { color: colors.PRIMARY }]}>💡 Impact Analysis</Text>
+                                <Text style={[styles.xaiTitle, { color: colors.PRIMARY }]}>How this fits your day</Text>
                                 {(() => {
                                     const userGoals = {
                                         calories: user.calories || 2000,
@@ -641,7 +658,7 @@ export default function Scan() {
                         {/* Save Button */}
                         <View style={{ marginTop: 20 }}>
                             <Button
-                                title={saving ? "Saving..." : "✅ Save to Meal Plan"}
+                                title={saving ? 'Saving…' : 'Save to meal plan'}
                                 onPress={async () => {
                                     if (!nutritionData) {
                                         Alert.alert('Error', 'No nutrition data to save')

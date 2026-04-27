@@ -3,7 +3,7 @@ import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { UserContext } from './../context/UserContext';
 import { RefreshDataContext } from './../context/RefreshDataContext';
 import { ThemeProvider } from './../context/ThemeContext';
-import { LogBox } from 'react-native';
+import { LogBox, View, Text } from 'react-native';
 import { useState, useEffect } from "react";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ErrorBoundary from '../components/common/ErrorBoundary';
@@ -42,10 +42,11 @@ LogBox.ignoreLogs([
   'does not match the table name'
 ]);
 
-// Create the Convex client once at module load so it is stable across renders.
-const convexClient = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
-  unsavedChangesWarning: false,
-});
+// Release APKs do not read .env.local — EXPO_PUBLIC_* must be set via EAS Secrets (or app config) at build time.
+const CONVEX_URL = (process.env.EXPO_PUBLIC_CONVEX_URL || '').trim();
+const convexClient = CONVEX_URL
+  ? new ConvexReactClient(CONVEX_URL, { unsavedChangesWarning: false })
+  : null;
 
 export default function RootLayout() {
   const [user, setUser] = useState();
@@ -81,6 +82,28 @@ export default function RootLayout() {
 
   if (!appIsReady) {
     return null; // Splash screen will show during this time
+  }
+
+  if (!convexClient) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          padding: 24,
+          backgroundColor: '#f5f5f5',
+        }}
+      >
+        <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 12, color: '#111' }}>
+          Missing Convex URL
+        </Text>
+        <Text style={{ fontSize: 15, color: '#333', lineHeight: 22 }}>
+          This install was built without EXPO_PUBLIC_CONVEX_URL. In Expo: Project → Secrets, add
+          EXPO_PUBLIC_CONVEX_URL (your Convex deployment URL), then run a new EAS build. Local
+          .env.local is not included in store/APK builds.
+        </Text>
+      </View>
+    );
   }
 
   return (
