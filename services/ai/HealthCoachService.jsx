@@ -3,31 +3,9 @@
  * Provides personalized health coaching with full user context
  */
 
-import OpenAI from "openai"
 import { logger } from "../../utils/logger"
-
-// Detect which provider to use
-const useOpenAI = !!process.env.EXPO_PUBLIC_OPENAI_API_KEY
-const useOpenRouter = !!process.env.EXPO_PUBLIC_OPENROUTER_API_KEY
-
-let openai
-
-if (useOpenAI) {
-    openai = new OpenAI({
-        apiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
-        dangerouslyAllowBrowser: true
-    })
-} else if (useOpenRouter) {
-    openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: process.env.EXPO_PUBLIC_OPENROUTER_API_KEY,
-        dangerouslyAllowBrowser: true
-    })
-} else {
-    openai = null
-}
-
-const AIMODELNAME = useOpenAI ? "gpt-4o-mini" : "google/gemini-2.0-flash-exp:free"
+import { getConvexClient } from "../../utils/convexClient"
+import { api } from "../../convex/_generated/api"
 
 /**
  * Build user context for AI health coach
@@ -59,7 +37,9 @@ export const BuildUserContext = (user, dailyMacros, recentMeals, progressData) =
         },
         today: {
             calories: safeDailyMacros.calories || 0,
-            protein: safeDailyMacros.proteins || 0,
+            // Convex GetDailyMacronutrients returns `protein` (singular).
+            // Keep backward compatibility if any older callsite returns `proteins`.
+            protein: safeDailyMacros.protein ?? safeDailyMacros.proteins ?? 0,
             carbs: safeDailyMacros.carbohydrates || 0,
             fat: safeDailyMacros.fat || 0,
             sodium: safeDailyMacros.sodium || 0,
@@ -106,48 +86,21 @@ ${context.progress.notes || 'No specific progress notes available'}`
 /**
  * Chat with AI Health Coach
  */
-export const ChatWithHealthCoach = async (userMessage, userContext, chatHistory = []) => {
-    if (!openai) {
-        throw new Error('AI service not available. Please configure API keys.')
+export const ChatWithHealthCoach = async (userMessage, userContext, chatHistory = [], uid) => {
+    const convex = getConvexClient()
+    if (!convex) {
+        throw new Error('AI service not available. Missing EXPO_PUBLIC_CONVEX_URL.')
     }
     
     try {
-        const systemPrompt = `You are a friendly and knowledgeable AI Health Coach for the WELLUS app. You have access to the user's complete health profile, daily nutrition goals, current intake, and meal history.
-
-Your role:
-- Provide personalized, actionable health and nutrition advice
-- Help users understand their progress and make better choices
-- Answer questions about nutrition, fitness, and wellness
-- Be encouraging, supportive, and non-judgmental
-- Use the user's data to give specific, relevant recommendations
-- Keep responses concise (2-3 sentences when possible, up to 5 for complex questions)
-- Always reference the user's actual data when relevant
-
-User Context:
-${userContext}
-
-Guidelines:
-- If user asks about their progress, reference their actual intake vs goals
-- If they ask for meal suggestions, consider their remaining macros
-- If they ask about their goal, reference their specific goal (weight loss, muscle gain, etc.)
-- Be encouraging and supportive
-- Use simple, clear language
-- Avoid medical advice - suggest consulting healthcare professionals for medical concerns`
-
-        const messages = [
-            { role: "system", content: systemPrompt },
-            ...chatHistory.slice(-10), // Keep last 10 messages for context
-            { role: "user", content: userMessage }
-        ]
-        
-        const response = await openai.chat.completions.create({
-            model: AIMODELNAME,
-            messages: messages,
-            temperature: 0.7,
-            max_tokens: 500
+        const response = await convex.action(api.Ai.ChatWithHealthCoachAI, {
+            uid: uid || undefined,
+            userContext: userContext || '',
+            userMessage,
+            chatHistory: Array.isArray(chatHistory) ? chatHistory.slice(-10) : []
         })
         
-        return response.choices[0].message.content
+        return response
     } catch (error) {
         logger.error('Health Coach AI Error:', error)
         

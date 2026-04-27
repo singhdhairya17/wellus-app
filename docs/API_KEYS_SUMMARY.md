@@ -32,18 +32,15 @@
 - **Free Tier:** $5 free credits for new accounts
 - **Status:** Optional - app works without it (uses fallbacks)
 
-#### 3. **OpenRouter API** (OPTIONAL - Alternative to OpenAI)
-- **Key:** `EXPO_PUBLIC_OPENROUTER_API_KEY`
+#### 3. **Anthropic API** (RECOMMENDED for server-side AI features)
+- **Key:** `ANTHROPIC_API_KEY` (server-side / Convex env)
 - **Used in:**
-  - `services/ai/AiModel.jsx` - AI recipe generation
-  - `services/ai/HealthCoachService.jsx` - Health coach chat
-  - `services/ocr/OCRService.jsx` - OCR via Gemini Vision
-- **Purpose:** 
-  - Access to multiple AI models (Gemini, Claude, GPT, etc.)
-  - Free tier with Gemini
-- **Cost:** Free tier available (Gemini free), paid models vary
-- **Payment:** ✅ **Debit card accepted**
-- **Status:** Optional - alternative to OpenAI
+  - `convex/Ai.js` - Health coach chat, AI recipes, nutrition parsing, calorie calculation
+- **Purpose:**
+  - Claude model responses for the app’s AI features
+- **Cost:** Pay-as-you-go (see Anthropic pricing)
+- **Payment:** Depends on region/account
+- **Status:** ✅ Current backend AI provider (no OpenRouter required)
 
 #### 4. **AI Guru Lab** (OPTIONAL - for recipe images)
 - **Key:** `EXPO_PUBLIC_AIRGURU_LAB_API_KEY`
@@ -95,7 +92,7 @@
 | **Convex** | `EXPO_PUBLIC_CONVEX_URL` | ✅ Yes | Free tier | N/A | Database |
 | **Firebase** | `EXPO_PUBLIC_FIREBASE_API_KEY` | ✅ Yes | Free tier | N/A | Auth |
 | **OpenAI** | `EXPO_PUBLIC_OPENAI_API_KEY` | ❌ No | Pay-as-you-go | ✅ Yes | AI features |
-| **OpenRouter** | `EXPO_PUBLIC_OPENROUTER_API_KEY` | ❌ No | Free tier available | ✅ Yes | AI features |
+| **Anthropic** | `ANTHROPIC_API_KEY` | ❌ No | Pay-as-you-go | Varies | Backend AI features |
 | **Google Vision** | `EXPO_PUBLIC_GOOGLE_VISION_API_KEY` | ❌ No | 1k/month free | ✅ Yes | OCR |
 | **Azure Vision** | `EXPO_PUBLIC_AZURE_VISION_API_KEY` | ❌ No | 5k/month free | ✅ Yes | OCR |
 | **AI Guru Lab** | `EXPO_PUBLIC_AIRGURU_LAB_API_KEY` | ❌ No | Varies | Check | Recipe images |
@@ -110,9 +107,8 @@
 - ✅ OCR.space (no key needed - already working)
 
 ### **For Full AI Features:**
-- 🤖 **OpenAI API Key** OR **OpenRouter API Key** (choose one)
-  - OpenAI: Better models, pay-as-you-go
-  - OpenRouter: Free tier with Gemini, multiple models
+- 🤖 **Anthropic API Key** (server-side) to enable the app’s AI backend actions
+- (Optional) OpenAI client key if you still have any direct client-side OpenAI calls
 
 ### **For Better OCR (Optional):**
 - 👁️ Google Vision API Key (1k/month free)
@@ -132,14 +128,11 @@ All services that require payment accept:
 ## 🚀 Recommended Setup
 
 ### **For Development/Testing:**
-1. Use **OpenRouter** (free tier with Gemini)
-2. Use **OCR.space** (already working, no key needed)
-3. No payment needed!
+1. Use **OCR.space** (already working, no key needed)
+2. Use **Anthropic** for AI backend actions (or rely on fallbacks if you haven’t configured it yet)
 
 ### **For Production:**
-1. **OpenAI API Key** (for best AI features)
-   - Debit card accepted ✅
-   - $5 free credits for new accounts
+1. **Anthropic API Key** (backend AI features via Convex)
 2. **Google Vision** (optional, 1k/month free)
 3. **Azure Vision** (optional, 5k/month free)
 
@@ -153,7 +146,7 @@ All services that require payment accept:
 - ✅ Auth works (Firebase - already configured)
 - ⚠️ AI features need OpenAI or OpenRouter key
 
-**To enable AI features, you only need ONE key:**
-- Either `EXPO_PUBLIC_OPENAI_API_KEY` OR `EXPO_PUBLIC_OPENROUTER_API_KEY`
+**To enable backend AI features, you need:**
+- `ANTHROPIC_API_KEY` (Convex env)
 
 

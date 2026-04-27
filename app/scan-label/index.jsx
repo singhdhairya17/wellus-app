@@ -3,6 +3,8 @@ import React, { useState, useContext } from 'react'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { ExtractNutritionFromLabel } from '../../services/ocr/OCRService'
+import { isLocalOCRAvailable } from '../../services/ocr/LocalOCRService'
+import { logger } from '../../utils/logger'
 import Button from '../../components/common/shared/Button'
 import Colors from '../../constants/colors'
 import { HugeiconsIcon } from '@hugeicons/react-native'
@@ -18,6 +20,7 @@ import { GenerateFoodItemExplanation } from '../../services/ai/XAIService'
 import { useConvex } from 'convex/react'
 
 export default function ScanLabel() {
+    console.log('ML Kit available:', isLocalOCRAvailable())
     const [image, setImage] = useState(null)
     const [loading, setLoading] = useState(false)
     const [nutritionData, setNutritionData] = useState(null)
@@ -40,11 +43,86 @@ export default function ScanLabel() {
         sugar: 0
     })
 
+    const recropCurrentImage = async () => {
+        if (!image) return
+
+        try {
+            const cropperModule = await import('react-native-image-crop-picker')
+            const Cropper = cropperModule?.default || cropperModule
+            if (!Cropper?.openCropper) {
+                Alert.alert('Cropper unavailable', 'Re-crop requires a dev build (not Expo Go).')
+                return
+            }
+
+            let localUri = image
+
+            // If current image is a remote URL, download to local before cropping
+            if (typeof localUri === 'string' && (localUri.startsWith('http://') || localUri.startsWith('https://'))) {
+                const downloadRes = await FileSystem.downloadAsync(
+                    localUri,
+                    FileSystem.cacheDirectory + `label_recrop_${Date.now()}.jpg`
+                )
+                if (!downloadRes?.uri) throw new Error('Failed to download image for cropping')
+                localUri = downloadRes.uri
+            }
+
+            // Cropper expects a filesystem path (no file:// prefix)
+            const cropPath = localUri.startsWith('file://') ? localUri.replace('file://', '') : localUri
+
+            const cropped = await Cropper.openCropper({
+                path: cropPath,
+                cropping: true,
+                freeStyleCropEnabled: true,
+                compressImageQuality: 1,
+                includeBase64: false,
+                forceJpg: true,
+            })
+
+            const croppedUri = cropped?.path ? `file://${cropped.path}` : null
+            if (croppedUri) {
+                logger.log('✅ Re-cropped image:', croppedUri)
+                setImage(croppedUri)
+                setNutritionData(null)
+            }
+        } catch (e) {
+            logger.warn('⚠️ Re-crop failed:', e?.message || e)
+            Alert.alert('Re-crop failed', 'Could not open cropper. Please try again.')
+        }
+    }
+
     const pickImage = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
-        if (status !== 'granted') {
-            Alert.alert('Permission needed', 'We need camera roll permission to scan labels')
-            return
+        // Prefer a true crop/straighten UX (works offline).
+        // Fallback to expo-image-picker if the native cropper isn't available.
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'We need camera roll permission to scan labels')
+                return
+            }
+
+            const cropperModule = await import('react-native-image-crop-picker')
+            const Cropper = cropperModule?.default || cropperModule
+            if (Cropper?.openPicker) {
+                logger.log('✂️ Using on-device cropper for gallery image...')
+                const cropped = await Cropper.openPicker({
+                    cropping: true,
+                    freeStyleCropEnabled: true,
+                    mediaType: 'photo',
+                    compressImageQuality: 1,
+                    includeBase64: false,
+                    forceJpg: true,
+                })
+
+                const croppedUri = cropped?.path ? `file://${cropped.path}` : null
+                if (croppedUri) {
+                    logger.log('✅ Cropped image:', croppedUri)
+                    setImage(croppedUri)
+                    setNutritionData(null)
+                    return
+                }
+            }
+        } catch (e) {
+            logger.warn('⚠️ Cropper unavailable, falling back to image picker:', e?.message || e)
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -55,16 +133,48 @@ export default function ScanLabel() {
         })
 
         if (!result.canceled) {
-            setImage(result.assets[0].uri)
+            const uri = result.assets[0].uri
+            logger.log('🖼️ Image selected from library:', uri)
+            setImage(uri)
             setNutritionData(null)
         }
     }
 
     const takePhoto = async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync()
-        if (status !== 'granted') {
-            Alert.alert('Permission needed', 'We need camera permission to scan labels')
-            return
+        // Prefer a true "document scanner" capture (edge detect + crop + perspective fix)
+        // Fallback to normal camera capture if scanner isn't available.
+        try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync()
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'We need camera permission to scan labels')
+                return
+            }
+
+            // Dynamically import so builds without the native module won't crash.
+            const scannerModule = await import('react-native-document-scanner-plugin')
+            const DocumentScanner = scannerModule?.default || scannerModule
+
+            if (DocumentScanner?.scanDocument) {
+                logger.log('📄 Using on-device document scanner capture...')
+                const scanResult = await DocumentScanner.scanDocument({
+                    croppedImageQuality: 100,
+                    responseType: 'imageFilePath',
+                    maxNumDocuments: 1,
+                })
+
+                const scannedUri = scanResult?.scannedImages?.[0]
+                if (scannedUri) {
+                    logger.log('✅ Document scanned:', scannedUri)
+                    setImage(scannedUri)
+                    setNutritionData(null)
+                    return
+                }
+
+                // User cancelled or scan failed; fall through to normal camera.
+                logger.log('ℹ️ Document scan cancelled/empty, falling back to camera capture')
+            }
+        } catch (e) {
+            logger.warn('⚠️ Document scanner unavailable, falling back to camera capture:', e?.message || e)
         }
 
         const result = await ImagePicker.launchCameraAsync({
@@ -74,7 +184,9 @@ export default function ScanLabel() {
         })
 
         if (!result.canceled) {
-            setImage(result.assets[0].uri)
+            const uri = result.assets[0].uri
+            logger.log('📸 Photo captured:', uri)
+            setImage(uri)
             setNutritionData(null)
         }
     }
@@ -93,7 +205,46 @@ export default function ScanLabel() {
             return
         }
 
-        setImage(imageUrl)
+        // For consistency, download URL → crop/straighten locally → run OCR
+        try {
+            const downloadRes = await FileSystem.downloadAsync(
+                imageUrl,
+                FileSystem.cacheDirectory + `label_${Date.now()}.jpg`
+            )
+
+            const localUri = downloadRes?.uri
+            if (!localUri) throw new Error('Failed to download image')
+
+            try {
+                const cropperModule = await import('react-native-image-crop-picker')
+                const Cropper = cropperModule?.default || cropperModule
+                if (Cropper?.openCropper) {
+                    logger.log('✂️ Using on-device cropper for URL image...')
+                    const cropped = await Cropper.openCropper({
+                        path: localUri.replace('file://', ''),
+                        cropping: true,
+                        freeStyleCropEnabled: true,
+                        compressImageQuality: 1,
+                        includeBase64: false,
+                        forceJpg: true,
+                    })
+
+                    const croppedUri = cropped?.path ? `file://${cropped.path}` : localUri
+                    logger.log('✅ URL image prepared:', croppedUri)
+                    setImage(croppedUri)
+                } else {
+                    logger.log('ℹ️ Cropper not available; using downloaded image')
+                    setImage(localUri)
+                }
+            } catch (cropErr) {
+                logger.warn('⚠️ Cropper failed; using downloaded image:', cropErr?.message || cropErr)
+                setImage(localUri)
+            }
+        } catch (err) {
+            logger.warn('⚠️ URL download/crop failed; using URL directly:', err?.message || err)
+            setImage(imageUrl)
+        }
+
         setImageUrl('')
         setShowUrlInput(false)
         setNutritionData(null)
@@ -132,12 +283,23 @@ export default function ScanLabel() {
 
         setLoading(true)
         try {
+            const startMs = Date.now()
+            logger.log('🔎 Scan started:', {
+                source: image.startsWith('http') ? 'remote_url' : 'local_file',
+                imagePreview: image?.substring?.(0, 80),
+            })
             const data = await ExtractNutritionFromLabel(image)
             setNutritionData(data)
             setEditing(false)
+            logger.log('✅ Scan completed:', {
+                ms: Date.now() - startMs,
+                dataPreview: data,
+                debug: data?.__debug,
+            })
             Alert.alert('Success!', 'Nutrition data extracted successfully')
         } catch (error) {
             console.error(error)
+            logger.error('❌ Scan failed:', error?.message || error)
             // Always show manual entry option when OCR fails
             const shouldShowManual = error.message?.includes('Both OCR services failed') || 
                                     error.message?.includes('Rate limit') ||
@@ -220,6 +382,12 @@ export default function ScanLabel() {
                                     setImage(null)
                                     setNutritionData(null)
                                 }}
+                            />
+                            <View style={{ height: 10 }} />
+                            <Button
+                                title="✂️ Re-crop"
+                                onPress={recropCurrentImage}
+                                disabled={loading}
                             />
                             <View style={{ height: 10 }} />
                             <Button

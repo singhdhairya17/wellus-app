@@ -40,8 +40,10 @@ export default {
     
     Return ONLY valid JSON, no other text.`,
 
-    GENERATE_RECIPE_OPTION_PROMPT: `:Depends on user instruction create 3 different Recipe variant with Recipe Name with Emoji, 
-    2 line description and main ingredient list in JSON format with field recipeName,description,ingredients (without size) only, Do not give me text response`,
+    GENERATE_RECIPE_OPTION_PROMPT: `Generate exactly 3 recipe variants as a JSON array. 
+   Each item must have: recipeName (string with emoji), 
+   description (max 2 sentences), ingredients (array of name strings, no quantities).
+   Input:`,
 
     GENERATE_COMPLETE_RECIPE_PROMPT: ` 
             - As per recipeName and description give me recipeName and description as field, Give me all list of ingredients as ingredient ,

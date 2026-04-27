@@ -3,13 +3,46 @@
 // 2. OCR.space (25k/month free, no API key needed)
 // 3. Google Cloud Vision (1k/month free, optional API key)
 // 4. Azure Computer Vision (5k/month free, optional API key)
-// 5. Gemini Vision via OpenRouter (free tier, optional API key)
-// 6. Manual regex extraction (always works, unlimited)
+// 5. Manual regex extraction (always works, unlimited)
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { logger } from '../../utils/logger';
 import { ExtractTextLocally, isLocalOCRAvailable } from './LocalOCRService';
 import { applyFullPreprocessingPipeline, shouldPreprocessImage } from './ImagePreprocessing';
+import { getCachedData, setCachedData } from '../cache/ApiCacheService';
+import { getConvexClient } from '../../utils/convexClient';
+import { api } from '../../convex/_generated/api';
+
+// Debug toggle: enables verbose OCR logs even outside __DEV__
+const OCR_DEBUG_ENABLED =
+    process.env.EXPO_PUBLIC_OCR_DEBUG === '1' ||
+    process.env.EXPO_PUBLIC_OCR_DEBUG === 'true';
+
+// In-flight dedupe for AI parsing calls
+const inFlightParseRequests = new Map();
+
+const stableHash = (str) => {
+    // Fast, deterministic (not cryptographic) hash for cache keys
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = (h * 33) ^ str.charCodeAt(i);
+    return (h >>> 0).toString(16);
+};
+
+const ocrLog = (...args) => {
+    if (OCR_DEBUG_ENABLED) console.log(...args);
+    logger.log(...args);
+};
+
+const ocrWarn = (...args) => {
+    if (OCR_DEBUG_ENABLED) console.warn(...args);
+    logger.warn(...args);
+};
+
+const ocrError = (...args) => {
+    // Always emit errors (logger.error is already always-on)
+    console.error(...args);
+    logger.error(...args);
+};
 
 // SECURITY: Validate URL to prevent SSRF attacks
 const validateUrl = (url) => {
@@ -71,7 +104,8 @@ const validateUrl = (url) => {
             }
         }
         
-        return { valid: true, url: urlObj.href };
+        // Return the parsed URL object so callers can safely use .href/.hostname
+        return { valid: true, url: urlObj };
     } catch (error) {
         return { valid: false, error: 'Invalid URL format' };
     }
@@ -81,6 +115,42 @@ const validateUrl = (url) => {
 const isRemoteUrl = (uri) => {
     if (!uri || typeof uri !== 'string') return false;
     return uri.startsWith('http://') || uri.startsWith('https://');
+};
+
+// Helper: Download remote image to local file (needed for LOCAL OCR)
+// SECURITY: Uses same URL validation and size limits as base64 path
+const downloadImageAsLocalFile = async (url) => {
+    const startMs = Date.now();
+    const urlValidation = validateUrl(url);
+    if (!urlValidation.valid) {
+        throw new Error(`Security: ${urlValidation.error}`);
+    }
+
+    const validatedUrl = urlValidation.url;
+    const targetUri = FileSystem.cacheDirectory + 'temp_ocr_file_' + Date.now() + '.jpg';
+    ocrLog('📥 Downloading remote image for local OCR...');
+
+    const downloadPromise = FileSystem.downloadAsync(validatedUrl.href, targetUri);
+    const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Download timeout')), 30000)
+    );
+    const downloadResult = await Promise.race([downloadPromise, timeoutPromise]);
+
+    if (downloadResult.status !== 200) {
+        throw new Error(`HTTP ${downloadResult.status}: Failed to download image`);
+    }
+
+    const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+    if (fileInfo.exists && fileInfo.size) {
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (fileInfo.size > maxSize) {
+            await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true });
+            throw new Error('Image file too large. Maximum size is 10MB.');
+        }
+    }
+
+    ocrLog('✅ Remote image downloaded for local OCR in', Date.now() - startMs, 'ms');
+    return downloadResult.uri;
 };
 
 // Helper: Download remote image and convert to base64 (React Native compatible)
@@ -94,7 +164,7 @@ const downloadImageAsBase64 = async (url) => {
         }
         
         const validatedUrl = urlValidation.url;
-        logger.log('📥 Downloading image from validated URL:', validatedUrl.hostname);
+        ocrLog('📥 Downloading image from validated URL:', validatedUrl.hostname);
         
         // SECURITY: Set timeout for download (30 seconds)
         const downloadPromise = FileSystem.downloadAsync(
@@ -112,7 +182,7 @@ const downloadImageAsBase64 = async (url) => {
             throw new Error(`HTTP ${downloadResult.status}: Failed to download image`);
         }
         
-        logger.log('✅ Image downloaded, converting to base64...');
+        ocrLog('✅ Image downloaded, converting to base64...');
         
         // SECURITY: Check file size before reading (10MB limit)
         const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
@@ -144,18 +214,18 @@ const downloadImageAsBase64 = async (url) => {
         
         const base64Image = `data:image/${imageFormat};base64,${base64}`;
         
-        logger.log('✅ Base64 conversion successful, length:', base64Image.length);
+        ocrLog('✅ Base64 conversion successful, length:', base64Image.length);
         
         // Clean up temp file
         try {
             await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true });
         } catch (cleanupError) {
-            logger.warn('⚠️ Could not delete temp file:', cleanupError);
+            ocrWarn('⚠️ Could not delete temp file:', cleanupError);
         }
         
         return base64Image;
     } catch (error) {
-        logger.error('❌ Download error:', error.message);
+        ocrError('❌ Download error:', error.message);
         
         // SECURITY: Don't return URL directly as fallback (security risk)
         throw new Error(`Failed to download image: ${error.message}`);
@@ -166,7 +236,7 @@ const downloadImageAsBase64 = async (url) => {
 // SECURITY: Validates file size and format
 const convertLocalImageToBase64 = async (uri) => {
     try {
-        logger.log('📥 Converting local image to base64...');
+        ocrLog('📥 Converting local image to base64...');
         
         // SECURITY: Check file size before reading (10MB limit)
         const fileInfo = await FileSystem.getInfoAsync(uri);
@@ -200,10 +270,10 @@ const convertLocalImageToBase64 = async (uri) => {
         
         const base64Image = `data:image/${imageFormat};base64,${base64}`;
         
-        logger.log('✅ Local image converted to base64, length:', base64Image.length);
+        ocrLog('✅ Local image converted to base64, length:', base64Image.length);
         return base64Image;
     } catch (error) {
-        logger.error('❌ Local image conversion error:', error);
+        ocrError('❌ Local image conversion error:', error);
         throw new Error(`Failed to convert local image to base64: ${error.message}`);
     }
 };
@@ -228,84 +298,11 @@ const retryWithBackoff = async (fn, maxRetries = 3, delay = 1000) => {
     }
 };
 
-// Extract text from image using Gemini Vision API (works in React Native)
-export const ExtractTextFromImage = async (imageUri) => {
-    try {
-        logger.log('🔍 Starting OCR with Gemini Vision...');
-        logger.log('📷 Image URI:', imageUri.substring(0, 100) + '...');
-        
-        // Check if OpenRouter is available
-        const useOpenRouter = !!process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-        if (!useOpenRouter) {
-            throw new Error('OpenRouter API key not found. Please set EXPO_PUBLIC_OPENROUTER_API_KEY');
-        }
-
-        // Convert image to base64
-        let base64Image;
-        if (isRemoteUrl(imageUri)) {
-            logger.log('🌐 Remote URL detected, downloading...');
-            base64Image = await downloadImageAsBase64(imageUri);
-        } else {
-            logger.log('📁 Local file detected, converting...');
-            base64Image = await convertLocalImageToBase64(imageUri);
-        }
-
-        logger.log('✅ Image converted to base64, calling Gemini Vision...');
-
-        // Use Gemini Vision to extract text with retry logic
-        const OpenAI = (await import('openai')).default;
-        const openai = new OpenAI({
-            baseURL: "https://openrouter.ai/api/v1",
-            apiKey: process.env.EXPO_PUBLIC_OPENROUTER_API_KEY,
-            dangerouslyAllowBrowser: true
-        });
-
-        const response = await retryWithBackoff(async () => {
-            return await openai.chat.completions.create({
-                model: "google/gemini-2.0-flash-exp:free",
-                messages: [
-                    {
-                        role: "user",
-                        content: [
-                            {
-                                type: "text",
-                                text: "Extract ALL text from this nutrition facts label image. Return ONLY the raw text content, nothing else. Include all numbers, labels, and nutritional information exactly as it appears."
-                            },
-                            {
-                                type: "image_url",
-                                image_url: {
-                                    url: base64Image
-                                }
-                            }
-                        ]
-                    }
-                ]
-            });
-        }, 3, 2000); // 3 retries, starting with 2 second delay
-
-        const extractedText = response.choices[0].message.content;
-        logger.log('✅ Extracted text length:', extractedText?.length || 0);
-        logger.log('✅ Extracted text preview:', extractedText?.substring(0, 200) || 'No text');
-        
-        return extractedText || '';
-    } catch (error) {
-        logger.error('❌ OCR Error:', error);
-        logger.error('❌ Error message:', error.message);
-        
-        // Better error message for rate limits
-        if (error.message?.includes('429') || error.status === 429) {
-            throw new Error('Rate limit exceeded. Please wait a moment and try again, or use "Choose Photo" instead of URL.');
-        }
-        
-        throw new Error(`Failed to extract text from image: ${error.message}`);
-    }
-};
-
 // FREE OCR using OCR.space API (25k requests/month, no credit card needed)
 // SECURITY: Validates base64 image before sending
 const extractTextWithOCRSpace = async (base64Image) => {
     try {
-        logger.log('🆓 Using free OCR.space API...');
+        ocrLog('🆓 Using free OCR.space API...');
         
         // SECURITY: Validate base64 image format
         if (!base64Image || typeof base64Image !== 'string') {
@@ -352,27 +349,27 @@ const extractTextWithOCRSpace = async (base64Image) => {
         
         // Check if response is HTML (error page) instead of JSON
         if (responseText.trim().startsWith('<')) {
-            logger.error('❌ OCR.space returned HTML instead of JSON (likely error page)');
+            ocrError('❌ OCR.space returned HTML instead of JSON (likely error page)');
             throw new Error('OCR.space API error - service unavailable');
         }
         
         const result = JSON.parse(responseText);
-        logger.log('📊 OCR.space response code:', result.OCRExitCode);
+        ocrLog('📊 OCR.space response code:', result.OCRExitCode);
         
         if (result.OCRExitCode === 1 && result.ParsedResults && result.ParsedResults.length > 0) {
             const extractedText = result.ParsedResults[0].ParsedText;
             if (extractedText && extractedText.trim().length > 10) {
-                logger.log('✅ OCR.space extracted text length:', extractedText.length);
+                ocrLog('✅ OCR.space extracted text length:', extractedText.length);
                 return extractedText.trim();
             }
         }
         
         // If OCR.space fails, check error message
         const errorMessage = result.ErrorMessage?.[0] || result.ErrorMessage || 'Failed to extract text';
-        logger.error('❌ OCR.space error details:', errorMessage);
+        ocrError('❌ OCR.space error details:', errorMessage);
         throw new Error(`OCR.space: ${errorMessage}`);
     } catch (error) {
-        logger.error('❌ OCR.space error:', error);
+        ocrError('❌ OCR.space error:', error);
         // If it's a JSON parse error, it's likely HTML response
         if (error.message?.includes('JSON Parse') || error.message?.includes('Unexpected character')) {
             throw new Error('OCR.space service unavailable - using fallback');
@@ -389,7 +386,7 @@ const extractTextWithGoogleVision = async (base64Image) => {
             throw new Error('Google Vision API key not configured');
         }
 
-        logger.log('🔍 Using Google Cloud Vision API (free tier: 1k/month)...');
+        ocrLog('🔍 Using Google Cloud Vision API (free tier: 1k/month)...');
         
         // Remove data:image prefix if present
         const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
@@ -425,14 +422,14 @@ const extractTextWithGoogleVision = async (base64Image) => {
         if (result.responses && result.responses[0] && result.responses[0].fullTextAnnotation) {
             const extractedText = result.responses[0].fullTextAnnotation.text;
             if (extractedText && extractedText.trim().length > 10) {
-                logger.log('✅ Google Vision extracted text length:', extractedText.length);
+                ocrLog('✅ Google Vision extracted text length:', extractedText.length);
                 return extractedText.trim();
             }
         }
         
         throw new Error('Google Vision: No text detected');
     } catch (error) {
-        logger.error('❌ Google Vision error:', error);
+        ocrError('❌ Google Vision error:', error);
         throw error;
     }
 };
@@ -447,7 +444,7 @@ const extractTextWithAzureVision = async (base64Image) => {
             throw new Error('Azure Vision API key/endpoint not configured');
         }
 
-        logger.log('🔍 Using Azure Computer Vision API (free tier: 5k/month)...');
+        ocrLog('🔍 Using Azure Computer Vision API (free tier: 5k/month)...');
         
         // Remove data:image prefix if present
         const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
@@ -486,14 +483,14 @@ const extractTextWithAzureVision = async (base64Image) => {
             }
             
             if (extractedText.trim().length > 10) {
-                logger.log('✅ Azure Vision extracted text length:', extractedText.length);
+                ocrLog('✅ Azure Vision extracted text length:', extractedText.length);
                 return extractedText.trim();
             }
         }
         
         throw new Error('Azure Vision: No text detected');
     } catch (error) {
-        logger.error('❌ Azure Vision error:', error);
+        ocrError('❌ Azure Vision error:', error);
         throw error;
     }
 };
@@ -501,9 +498,17 @@ const extractTextWithAzureVision = async (base64Image) => {
 // Parse nutrition data from extracted text OR directly from image
 export const ExtractNutritionFromLabel = async (imageUri) => {
     try {
+        const flowStartMs = Date.now();
+        const localOcrAvailable = isLocalOCRAvailable();
+        ocrLog('🧾 OCR pipeline started', {
+            source: isRemoteUrl(imageUri) ? 'remote_url' : 'local_file',
+            localOcrAvailable,
+            debug: OCR_DEBUG_ENABLED,
+        });
+
         // STEP 1: Preprocess image for better OCR accuracy (as per WELLUS paper)
         // This improves accuracy from 89% to 92%+ in challenging conditions
-        logger.log('🔄 Preprocessing image for optimal OCR accuracy...');
+        ocrLog('🔄 Preprocessing image for optimal OCR accuracy...');
         let processedImageUri = imageUri;
         
         // Check if preprocessing is recommended
@@ -516,9 +521,9 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
                     enableSharpening: true,
                     targetWidth: 1200, // Optimal for OCR
                 });
-                logger.log('✅ Image preprocessing complete - improved OCR accuracy expected');
+                ocrLog('✅ Image preprocessing complete - improved OCR accuracy expected');
             } catch (preprocessError) {
-                logger.warn('⚠️ Preprocessing failed, using original image:', preprocessError.message);
+                ocrWarn('⚠️ Preprocessing failed, using original image:', preprocessError.message);
                 processedImageUri = imageUri; // Fallback to original
             }
         }
@@ -526,137 +531,125 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
         // Convert image to base64 (for API-based OCR)
         let base64Image;
         if (isRemoteUrl(imageUri)) {
-            logger.log('🌐 Remote URL detected, downloading...');
+            ocrLog('🌐 Remote URL detected, downloading...');
             base64Image = await downloadImageAsBase64(imageUri);
         } else {
-            logger.log('📁 Local file detected, converting...');
+            ocrLog('📁 Local file detected, converting...');
             // Use preprocessed image if available
             base64Image = await convertLocalImageToBase64(processedImageUri);
         }
 
-        logger.log('✅ Image ready, extracting text...');
+        ocrLog('✅ Image ready, extracting text...');
 
         // Multi-tier OCR fallback chain - LOCAL OCR IS PRIMARY
         let extractedText = '';
         let lastError = null;
+        let ocrTierUsed = 'none';
         
         // PRIMARY: Try LOCAL OCR first (works offline, no API keys, unlimited)
         // This is the preferred method - always try it first if available
-        try {
-            // For local OCR, use preprocessed image for better accuracy
-            const imagePath = isRemoteUrl(imageUri) 
-                ? await downloadImageAsLocalFile(imageUri)
-                : processedImageUri; // Use preprocessed image
-            
-            extractedText = await ExtractTextLocally(imagePath);
-            logger.log('✅ ✅ PRIMARY: Text extracted with LOCAL OCR (offline, no API keys, unlimited)');
-            
-            // If local OCR succeeded, return immediately (no need for API fallback)
-            if (extractedText && extractedText.trim().length >= 10) {
-                // Continue to parsing step
-            } else {
-                throw new Error('Local OCR returned insufficient text');
+        if (localOcrAvailable) {
+            console.log('[OCR] Trying tier 1: local_mlkit');
+            try {
+                // For local OCR, use preprocessed image for better accuracy
+                const imagePath = isRemoteUrl(imageUri)
+                    ? await downloadImageAsLocalFile(imageUri)
+                    : processedImageUri; // Use preprocessed image
+                
+                const localStartMs = Date.now();
+                extractedText = await ExtractTextLocally(imagePath);
+                ocrTierUsed = 'local_mlkit';
+                ocrLog('✅ ✅ PRIMARY: Text extracted with LOCAL OCR (ML Kit)', {
+                    ms: Date.now() - localStartMs,
+                    chars: extractedText?.length || 0
+                });
+                console.log('[OCR] Success with tier 1: local_mlkit, chars:', (extractedText || '').length);
+                
+                // If local OCR succeeded, continue; if insufficient, fall through to Tier 2
+                if (!extractedText || extractedText.trim().length < 10) {
+                    extractedText = '';
+                    throw new Error('Local OCR returned insufficient text');
+                }
+            } catch (localError) {
+                ocrWarn('⚠️ Local OCR failed, using API fallback...', localError.message);
+                lastError = localError;
+                extractedText = ''; // Ensure Tier 2 will run
             }
-        } catch (localError) {
-            logger.warn('⚠️ Local OCR not available or failed, using API fallback...', localError.message);
-            lastError = localError;
+        } else {
+            // Expo Go / missing native module: skip silently to Tier 2
+            console.log('[OCR] Trying tier 1: local_mlkit (skipped - unavailable)');
         }
         
         // FALLBACK: Try FREE OCR.space (25k/month, no API key needed)
         if (!extractedText || extractedText.trim().length < 10) {
+            console.log('[OCR] Trying tier 2: ocr_space');
             try {
+                const ocrSpaceStartMs = Date.now();
                 extractedText = await extractTextWithOCRSpace(base64Image);
-                logger.log('✅ FALLBACK: Text extracted with OCR.space API');
+                ocrTierUsed = 'ocr_space';
+                ocrLog('✅ FALLBACK: Text extracted with OCR.space API', {
+                    ms: Date.now() - ocrSpaceStartMs,
+                    chars: extractedText?.length || 0
+                });
+                console.log('[OCR] Success with tier 2: ocr_space, chars:', (extractedText || '').length);
             } catch (ocrError) {
-                logger.warn('⚠️ OCR.space failed, trying next service...', ocrError.message);
+                ocrWarn('⚠️ OCR.space failed, trying next service...', ocrError.message);
                 lastError = ocrError;
+                extractedText = ''; // Ensure next tier runs
             }
         }
         
         // Step 3: Try Google Cloud Vision (1k/month free, optional)
         if (!extractedText || extractedText.trim().length < 10) {
+            console.log('[OCR] Trying tier 3: google_vision');
             try {
+                const googleStartMs = Date.now();
                 extractedText = await extractTextWithGoogleVision(base64Image);
-                logger.log('✅ Text extracted with Google Vision');
+                ocrTierUsed = 'google_vision';
+                ocrLog('✅ Text extracted with Google Vision', {
+                    ms: Date.now() - googleStartMs,
+                    chars: extractedText?.length || 0
+                });
+                console.log('[OCR] Success with tier 3: google_vision, chars:', (extractedText || '').length);
             } catch (googleError) {
                 // Don't log as error if API key is just not configured
                 if (googleError.message?.includes('not configured')) {
-                    logger.log('ℹ️ Google Vision not configured, skipping...');
+                    ocrLog('ℹ️ Google Vision not configured, skipping...');
                 } else {
-                    logger.warn('⚠️ Google Vision failed, trying next service...', googleError.message);
+                    ocrWarn('⚠️ Google Vision failed, trying next service...', googleError.message);
                 }
                 lastError = googleError;
+                extractedText = ''; // Ensure next tier runs
             }
         }
         
         // Step 4: Try Azure Computer Vision (5k/month free, optional)
         if (!extractedText || extractedText.trim().length < 10) {
+            console.log('[OCR] Trying tier 4: azure_vision');
             try {
+                const azureStartMs = Date.now();
                 extractedText = await extractTextWithAzureVision(base64Image);
-                logger.log('✅ Text extracted with Azure Vision');
+                ocrTierUsed = 'azure_vision';
+                ocrLog('✅ Text extracted with Azure Vision', {
+                    ms: Date.now() - azureStartMs,
+                    chars: extractedText?.length || 0
+                });
+                console.log('[OCR] Success with tier 4: azure_vision, chars:', (extractedText || '').length);
             } catch (azureError) {
                 // Don't log as error if API key is just not configured
                 if (azureError.message?.includes('not configured')) {
-                    logger.log('ℹ️ Azure Vision not configured, skipping...');
+                    ocrLog('ℹ️ Azure Vision not configured, skipping...');
                 } else {
-                    logger.warn('⚠️ Azure Vision failed, trying Gemini Vision...', azureError.message);
+                    ocrWarn('⚠️ Azure Vision failed, trying Gemini Vision...', azureError.message);
                 }
                 lastError = azureError;
+                extractedText = ''; // Ensure final empty return path triggers
             }
         }
         
-        // Step 5: Try Gemini Vision via OpenRouter (if available)
-        if (!extractedText || extractedText.trim().length < 10) {
-            const useOpenRouter = !!process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-            if (useOpenRouter) {
-                try {
-                    const OpenAI = (await import('openai')).default;
-                    const openai = new OpenAI({
-                        baseURL: "https://openrouter.ai/api/v1",
-                        apiKey: process.env.EXPO_PUBLIC_OPENROUTER_API_KEY,
-                        dangerouslyAllowBrowser: true
-                    });
-
-                    const response = await openai.chat.completions.create({
-                        model: "google/gemini-2.0-flash-exp:free",
-                        messages: [
-                            {
-                                role: "user",
-                                content: [
-                                    {
-                                        type: "text",
-                                        text: "Extract ALL text from this nutrition facts label image. Return ONLY the raw text content, nothing else."
-                                    },
-                                    {
-                                        type: "image_url",
-                                        image_url: { url: base64Image }
-                                    }
-                                ]
-                            }
-                        ]
-                    });
-                    extractedText = response.choices[0].message.content;
-                    logger.log('✅ Text extracted with Gemini Vision');
-                } catch (geminiError) {
-                    // Check if it's a rate limit (expected) vs other error
-                    if (geminiError.message?.includes('429') || geminiError.message?.includes('Rate limit')) {
-                        logger.warn('⚠️ Gemini Vision rate limited (expected on free tier), falling back to manual entry');
-                    } else {
-                        logger.warn('⚠️ Gemini Vision failed:', geminiError.message);
-                    }
-                    // Don't throw - return empty data for manual entry
-                    logger.log('ℹ️ All OCR services exhausted, returning empty data for manual entry');
-                    extractedText = ''; // Empty text will trigger manual entry
-                }
-            } else {
-                logger.log('ℹ️ OpenRouter not configured, all OCR services exhausted. Returning empty data for manual entry');
-                extractedText = ''; // Empty text will trigger manual entry
-            }
-        }
-
         // If no text extracted, return empty nutrition data for manual entry
         if (!extractedText || extractedText.trim().length < 10) {
-            logger.log('ℹ️ No text extracted from image, returning empty data for manual entry');
+            ocrWarn('ℹ️ No text extracted from image. OCR tier used:', ocrTierUsed, 'lastError:', lastError?.message);
             return {
                 calories: 0,
                 protein: 0,
@@ -665,27 +658,38 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
                 sodium: 0,
                 sugar: 0,
                 servingSize: '1 serving',
-                servingsPerContainer: 1
+                servingsPerContainer: 1,
+                __debug: {
+                    ocrTierUsed,
+                    localOcrAvailable,
+                    lastError: lastError?.message || null,
+                    ms: Date.now() - flowStartMs,
+                }
             };
         }
 
-        logger.log('📝 Extracted text preview:', extractedText.substring(0, 200));
+        ocrLog('📝 Extracted text preview:', extractedText.substring(0, 200));
 
         // Step 2: Parse nutrition data using AI (or manual fallback)
         let nutritionData;
         try {
             nutritionData = await ParseNutritionText(extractedText);
         } catch (parseError) {
-            logger.log('⚠️ AI parsing failed, using manual extraction:', parseError);
+            ocrWarn('⚠️ AI parsing failed, using manual extraction:', parseError?.message || parseError);
             // Check if it's a rate limit - still use manual extraction but log it
             if (parseError.message?.includes('429') || parseError.message?.includes('Rate limit') || parseError.message?.includes('RATE_LIMIT')) {
-                logger.log('⚠️ Rate limit detected, using manual regex extraction as fallback');
+                ocrWarn('⚠️ Rate limit detected, using manual regex extraction as fallback');
             }
             // Use manual extraction as fallback (always works, no API needed)
             nutritionData = ExtractNutritionManually(extractedText);
         }
         
-        logger.log('✅ Nutrition data extracted:', nutritionData);
+        ocrLog('✅ Nutrition data extracted:', nutritionData);
+        ocrLog('🏁 OCR pipeline completed', {
+            ocrTierUsed,
+            localOcrAvailable,
+            ms: Date.now() - flowStartMs,
+        });
         
         // Ensure it's an object with all required fields
         return {
@@ -696,27 +700,17 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
             sodium: nutritionData.sodium || 0,
             sugar: nutritionData.sugar || 0,
             servingSize: nutritionData.servingSize || '1 serving',
-            servingsPerContainer: nutritionData.servingsPerContainer || 1
+            servingsPerContainer: nutritionData.servingsPerContainer || 1,
+            __debug: {
+                ocrTierUsed,
+                localOcrAvailable,
+                lastError: lastError?.message || null,
+                ms: Date.now() - flowStartMs,
+            }
         };
     } catch (error) {
-        // Only log as error for critical failures (image processing)
-        if (error.message.includes('download') || error.message.includes('convert')) {
-            logger.error('❌ Critical error processing image:', error.message);
-        } else {
-            logger.warn('⚠️ Non-critical error, returning empty data for manual entry:', error.message);
-        }
-        
-        // Instead of throwing, return empty data for manual entry
-        // This ensures the app always works, even when all services fail
-        logger.log('ℹ️ Returning empty data for manual entry');
-        
-        // Only throw for critical errors (like image download/conversion failures)
-        if (error.message.includes('download') || error.message.includes('convert')) {
-            throw new Error('Failed to process image. Please try:\n1. Use "Choose Photo" instead of URL\n2. Ensure the image is accessible\n3. Try a different image');
-        }
-        
-        // For all other errors (rate limits, OCR failures, etc.), return empty data
-        // This allows manual entry to work
+        // Demo-ready: never throw to UI. Always return empty data for manual entry.
+        ocrWarn('⚠️ OCR pipeline error, returning empty data for manual entry:', error?.message || error);
         return {
             calories: 0,
             protein: 0,
@@ -725,7 +719,13 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
             sodium: 0,
             sugar: 0,
             servingSize: '1 serving',
-            servingsPerContainer: 1
+            servingsPerContainer: 1,
+            __debug: {
+                ocrTierUsed: 'none',
+                localOcrAvailable: isLocalOCRAvailable(),
+                lastError: error?.message || String(error),
+                ms: 0,
+            }
         };
     }
 };
@@ -733,73 +733,46 @@ export const ExtractNutritionFromLabel = async (imageUri) => {
 // Parse text to nutrition JSON using AI
 const ParseNutritionText = async (text) => {
     try {
-        // Use your existing OpenRouter setup
-        const useOpenRouter = !!process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-        
-        if (!useOpenRouter) {
-            // Fallback: Manual extraction (no API key available)
-            logger.log('No OpenRouter key, using manual extraction');
-            return ExtractNutritionManually(text);
+        const trimmed = (text || '').trim();
+        if (trimmed.length < 10) return ExtractNutritionManually(text);
+
+        const key = `nutrition_parse_${stableHash(trimmed)}`;
+
+        // 1) Cache hit
+        const cached = await getCachedData('ai_parse_nutrition', { key });
+        if (cached) {
+            ocrLog('✅ Using cached AI nutrition parse');
+            return cached;
         }
 
-        const OpenAI = (await import('openai')).default;
-        const openai = new OpenAI({
-            baseURL: "https://openrouter.ai/api/v1",
-            apiKey: process.env.EXPO_PUBLIC_OPENROUTER_API_KEY,
-            dangerouslyAllowBrowser: true
-        });
-
-        const prompt = `Extract nutritional information from this food label text. Return ONLY a JSON object, no other text. Do NOT return an array.
-
-Text from label:
-${text}
-
-Return JSON with this exact structure (as an object, NOT an array):
-{
-  "calories": number,
-  "protein": number (in grams),
-  "carbohydrates": number (in grams),
-  "fat": number (in grams),
-  "sodium": number (in milligrams),
-  "sugar": number (in grams),
-  "servingSize": string,
-  "servingsPerContainer": number
-}
-
-IMPORTANT: 
-- Look for "Calories" in the text - it's usually a large number near the top
-- If any value is not found, use 0
-- Extract numbers only (no units in numbers)
-- Return a JSON object, NOT an array`;
-
-        const response = await openai.chat.completions.create({
-            model: "google/gemini-2.0-flash-exp:free",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" }
-        });
-
-        let parsed = JSON.parse(response.choices[0].message.content);
-        
-        // Ensure it's an object, not an array
-        if (Array.isArray(parsed)) {
-            logger.log('⚠️ Got array instead of object, extracting first element');
-            parsed = parsed[0] || {};
+        // 2) In-flight dedupe
+        if (inFlightParseRequests.has(key)) {
+            return await inFlightParseRequests.get(key);
         }
-        
-        // Ensure all required fields exist with defaults
-        const result = {
-            calories: parsed.calories || 0,
-            protein: parsed.protein || 0,
-            carbohydrates: parsed.carbohydrates || 0,
-            fat: parsed.fat || 0,
-            sodium: parsed.sodium || 0,
-            sugar: parsed.sugar || 0,
-            servingSize: parsed.servingSize || '1 serving',
-            servingsPerContainer: parsed.servingsPerContainer || 1
-        };
-        
-        logger.log('✅ Parsed nutrition data (object):', result);
-        return result;
+
+        const parsePromise = (async () => {
+            const convex = getConvexClient();
+            if (!convex) {
+                ocrWarn('Missing EXPO_PUBLIC_CONVEX_URL; using manual extraction');
+                return ExtractNutritionManually(text);
+            }
+
+            // Convex Action keeps AI keys server-side.
+            const result = await convex.action(api.Ai.ParseNutritionTextAI, { text: trimmed });
+
+            // Cache result for quick re-opens / double taps
+            await setCachedData('ai_parse_nutrition', { key }, result);
+            return result;
+        })();
+
+        inFlightParseRequests.set(key, parsePromise);
+        try {
+            const res = await parsePromise;
+            ocrLog('✅ Parsed nutrition data (via Convex AI):', res);
+            return res;
+        } finally {
+            inFlightParseRequests.delete(key);
+        }
     } catch (error) {
         // Check if it's a rate limit error
         const isRateLimit = error?.message?.includes('429') || 
@@ -808,9 +781,9 @@ IMPORTANT:
                            error?.response?.status === 429;
         
         if (isRateLimit) {
-            logger.log('⚠️ Rate limit detected in AI parsing, using manual extraction fallback');
+            ocrWarn('⚠️ Rate limit detected in AI parsing, using manual extraction fallback');
         } else {
-            logger.error('AI Parse error, using manual extraction:', error);
+            ocrError('AI Parse error, using manual extraction:', error);
         }
         // Always fallback to manual extraction (works without API)
         return ExtractNutritionManually(text);
@@ -903,7 +876,7 @@ const ExtractNutritionManually = (text) => {
         servingsPerContainer
     };
 
-    logger.log('📊 Manual extraction result:', result);
+    ocrLog('📊 Manual extraction result:', result);
     return result;
 };
 

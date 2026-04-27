@@ -144,9 +144,6 @@ Create a file named `.env` in your project root with:
 # OpenAI API Key (for AI recipe generation and health coach)
 EXPO_PUBLIC_OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# Optional: OpenRouter API Key (alternative to OpenAI)
-# EXPO_PUBLIC_OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
 # Optional: Google Vision API Key (for better OCR)
 # EXPO_PUBLIC_GOOGLE_VISION_API_KEY=your-google-vision-key-here
 
@@ -180,12 +177,12 @@ Once your API key is set up:
 
 ---
 
-## 💡 Alternative: OpenRouter (Free Tier Available)
+## 💡 Backend AI (Anthropic via Convex)
 
-If you want to try a free alternative first:
-- **OpenRouter** offers free tier with Gemini
-- See: `docs/API_KEYS_SUMMARY.md` for details
-- Use `EXPO_PUBLIC_OPENROUTER_API_KEY` instead
+This app’s backend AI features are now implemented server-side in `convex/Ai.js` using Anthropic.
+
+- Set `ANTHROPIC_API_KEY` in your Convex environment variables.
+- The OpenAI key above is only needed if you still use any client-side OpenAI calls.
 
 ---
 
