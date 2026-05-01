@@ -160,7 +160,15 @@ Never commit production secrets. Keep keys in `.env.local`, your CI secrets, or 
 
 ### Environment variables (`.env.local`)
 
-Create **`.env.local`** in the **project root**. Git ignores it by default. Expo loads it when you run **`npx expo start`**. **Release binaries do not embed this file**; configure **`EXPO_PUBLIC_*`** on [expo.dev](https://expo.dev) for EAS builds (see below).
+The repo includes **`.env.example`** (safe to commit — placeholders only). Copy it to **`.env.local`** and fill in your values:
+
+```bash
+cp .env.example .env.local
+```
+
+On Windows (PowerShell): `Copy-Item .env.example .env.local`
+
+Git ignores **`.env.local`**. Expo loads it when you run **`npx expo start`**. **Release binaries do not embed this file**; configure **`EXPO_PUBLIC_*`** on [expo.dev](https://expo.dev) for EAS builds (see below).
 
 ```env
 EXPO_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud

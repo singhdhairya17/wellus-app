@@ -7,7 +7,7 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native credentials and build artifacts
+# Native credentials and release binaries
 *.orig.*
 *.jks
 *.p8
@@ -15,10 +15,12 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 *.apk
+*.aab
+*.ipa
 *.pem
 *.cert
 
-# Sensitive files
+# Sensitive files (avoid committing real secrets under these names)
 secrets.json
 config.json
 
@@ -29,13 +31,17 @@ config.json
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
 
-# macOS
+# macOS / editors
 .DS_Store
+.idea/
 
-# Local env files (ignore all .env variants)
+# Secrets & local env — copy `.env.example` → `.env.local` after clone (see README)
 .env
 .env.*
+!.env.example
+!.env.sample
 
 # Build artifacts
 build-*.apk
@@ -43,6 +49,15 @@ build-*.apk
 
 # TypeScript
 *.tsbuildinfo
+
+# Native project caches (after `expo prebuild` or local `expo run:*`)
+android/app/build/
+android/build/
+android/.gradle/
+.gradle/
+ios/Pods/
+ios/build/
+**/xcuserdata/
 
 # Example app (if folder, add trailing slash)
 app-example/
