@@ -86,70 +86,157 @@ Wellus is a comprehensive nutrition tracking application that combines OCR techn
 
 ## 📋 Prerequisites
 
-- **Node.js** 18+ and npm
-- **Expo CLI** (`npm install -g expo-cli`)
-- **iOS Simulator** (Mac) or **Android Emulator** / Physical device
-- **Expo Go** app (for development) or **Development Build** (for ML Kit OCR)
+- **Node.js** 18+ and **npm**
+- **Git** (optional but typical if you clone from GitHub)
+- **Expo account** (free) at [expo.dev](https://expo.dev) — required for **EAS Build** (APK/AAB)
+- **Convex account** (free tier) at [convex.dev](https://convex.dev)
+- **Firebase** project for Email/Password authentication
+- **OpenAI API key** (billing may apply for sustained use) — configured in **Convex**, not shipped in the client bundle
+- **Device**: physical Android/iPhone, or **Android Emulator** / **iOS Simulator** (macOS)
+
+> **Note:** Some native capabilities (for example parts of the OCR stack) require a **development build**, not the stock Expo Go client. Production builds produced by EAS include the native code defined in `app.json` and your plugins.
+
+---
 
 ## 🚀 Getting Started
 
-### 1. Clone the Repository
+Clone this repository (or download it as a ZIP from GitHub and extract), then work from the **project root** — the directory that contains `package.json`.
+
+### Install dependencies
 
 ```bash
 git clone https://github.com/singhdhairya17/wellus-app.git
 cd wellus-app
-```
-
-### 2. Install Dependencies
-
-```bash
 npm install
 ```
 
-### 3. Environment Setup
+If you did not use Git, unpack the archive, `cd` into the `wellus-app` folder, and run `npm install` there.
 
-Create **`.env.local`** in the project root (ignored by git). Expo loads it in development. Example:
+---
+
+### Convex backend
+
+Convex provides the database, server functions, and **server-side AI** (`convex/Ai.js`). **Use your own Convex project** so your data and API keys stay private and isolated.
+
+1. Create an account at [convex.dev](https://convex.dev) and add a **new project**.
+2. From the project root, authenticate and sync functions (first machine only needs login once):
+
+   ```bash
+   npx convex login
+   npx convex dev
+   ```
+
+   That pushes the `convex/` code and prints a **deployment URL** (for example `https://xxxxx.convex.cloud`).
+
+3. Use that value as **`EXPO_PUBLIC_CONVEX_URL`** in `.env.local` (see below).
+
+4. **OpenAI (required for AI features)** — In the [Convex Dashboard](https://dashboard.convex.dev) → your project → **Settings → Environment variables**, add:
+
+   | Variable           | Purpose |
+   |--------------------|--------|
+   | `OPENAI_API_KEY`   | Used by Convex actions in `convex/Ai.js` (health coach, recipes, nutrition parsing, vision). |
+
+   Deployments stay current with `npx convex dev` (development) or **`npx convex deploy`** (production / CI).
+
+5. The schema and functions in this repo apply automatically when Convex syncs.
+
+---
+
+### Firebase (authentication)
+
+The app uses **Firebase Authentication** with **Email/Password**.
+
+1. Open [Firebase Console](https://console.firebase.google.com) and create or select a project.
+2. Enable **Authentication** → **Sign-in method** → **Email/Password**.
+3. Under project settings → **Your apps**, register a **Web** app and copy the **`firebaseConfig`** object.
+
+4. Edit **`services/FirebaseConfig.jsx`** and replace the entire **`firebaseConfig`** object with your Web app values (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`, `measurementId` when present).
+
+5. Set **`EXPO_PUBLIC_FIREBASE_API_KEY`** in `.env.local` to the same **`apiKey`** string.
+
+Never commit production secrets. Keep keys in `.env.local`, your CI secrets, or the Expo dashboard for release builds — not in Git history.
+
+---
+
+### Environment variables (`.env.local`)
+
+Create **`.env.local`** in the **project root**. Git ignores it by default. Expo loads it when you run **`npx expo start`**. **Release binaries do not embed this file**; configure **`EXPO_PUBLIC_*`** on [expo.dev](https://expo.dev) for EAS builds (see below).
 
 ```env
-# Required for the app to talk to Convex
 EXPO_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
-
-# Firebase (client)
 EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_web_api_key
+EXPO_PUBLIC_EAS_PROJECT_ID=your-expo-project-uuid
 
-# EAS / notifications (matches app.json extra.eas.projectId)
-EXPO_PUBLIC_EAS_PROJECT_ID=your_eas_project_id
+# OPENAI_API_KEY belongs in the Convex dashboard only — not here.
 
-# OpenAI — set on Convex for server actions (Dashboard → Settings → Environment variables)
-# OPENAI_API_KEY is NOT read from this file by Convex cloud; set it in Convex.
-
-# Optional OCR / vision (client-side fallbacks; names must match code)
+# Optional OCR fallbacks
 # EXPO_PUBLIC_GOOGLE_VISION_API_KEY=
 # EXPO_PUBLIC_AZURE_VISION_API_KEY=
 # EXPO_PUBLIC_AZURE_VISION_ENDPOINT=
+
+# Optional debugging
 # EXPO_PUBLIC_OCR_DEBUG=1
 
-# Optional recipe images (client → Airguru Lab)
+# Optional recipe image API
 # EXPO_PUBLIC_AIRGURU_LAB_API_KEY=
 ```
 
-For **EAS builds**, mirror the same **`EXPO_PUBLIC_*`** names in the Expo dashboard for the right environment (`production`, `development`, etc.).
+Restart the Metro bundler after edits (`Ctrl+C`, then `npx expo start`).
 
-### 4. Start Development Server
+---
+
+### Run the app locally
+
+Run **Convex** and **Expo** at the same time (two terminals, project root):
 
 ```bash
-# Start Expo development server
-npx expo start
-
-# Or use npm script
-npm start
+# Terminal A
+npx convex dev
 ```
 
-### 5. Run on Device/Emulator
+```bash
+# Terminal B
+npx expo start
+```
 
-- **Expo Go**: Scan QR code with Expo Go app
-- **iOS Simulator**: Press `i` in terminal
-- **Android Emulator**: Press `a` in terminal
+Press **`a`** (Android), **`i`** (iOS), or scan the QR code with **Expo Go** or a **development build**.
+
+If the UI shows **Missing Convex URL**, `EXPO_PUBLIC_CONVEX_URL` is unset or empty — fix `.env.local` and restart Expo.
+
+---
+
+### EAS project (cloud builds)
+
+Cloud APK/AAB builds need the [EAS CLI](https://docs.expo.dev/build/setup/) and an Expo account:
+
+```bash
+npm install -g eas-cli
+eas login
+eas init
+```
+
+Link or create a project as prompted. Align **`EXPO_PUBLIC_EAS_PROJECT_ID`** with your Expo project if you rely on notification-related code paths. You may update **`app.json`** → **`extra.eas.projectId`** after linking.
+
+---
+
+### Environment variables for release builds
+
+Stores and devices running an **EAS-built** binary never read `.env.local` from your computer. Define the same **`EXPO_PUBLIC_*`** names under your project on [expo.dev](https://expo.dev) → **Environment variables** / **Secrets**, scoped to **`production`** or **`preview`** as your `eas.json` profiles expect.
+
+Minimum for a working build:
+
+- `EXPO_PUBLIC_CONVEX_URL`
+- `EXPO_PUBLIC_FIREBASE_API_KEY`
+- `EXPO_PUBLIC_EAS_PROJECT_ID` (if your features depend on it)
+
+Run a **new** build after changing variables. Keep **`OPENAI_API_KEY`** on the Convex deployment that matches `EXPO_PUBLIC_CONVEX_URL`.
+
+---
+
+### Devices and emulators
+
+- **Expo Go / dev client**: QR code from the terminal, or **`a`** / **`i`** shortcuts.
+- **Full native workflow**: see **Development build** below (`eas build --profile development` or `npx expo run:android` / `run:ios`).
 
 ## 🔧 Development Build (Required for ML Kit OCR)
 
@@ -220,48 +307,87 @@ wellus-app/
 └── assets/                       # Static assets (images, icons)
 ```
 
-## 🔑 API Keys Setup
+## 🔑 API keys & services (quick reference)
+
+Full walkthrough is in **Getting Started** above.
+
+| Service | Where you create credentials | Where you put them |
+|--------|------------------------------|---------------------|
+| **Convex** | [dashboard.convex.dev](https://dashboard.convex.dev) | `EXPO_PUBLIC_CONVEX_URL` in `.env.local` and Expo env for builds; sync code with `npx convex dev` / `npx convex deploy` |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com) | **`OPENAI_API_KEY`** in Convex → Settings → Environment variables |
+| **Firebase** | [Firebase Console](https://console.firebase.google.com) — Web app | Replace **`firebaseConfig`** in `services/FirebaseConfig.jsx`; set **`EXPO_PUBLIC_FIREBASE_API_KEY`** to match `apiKey` |
+| **Optional OCR** | Google Cloud Vision / Azure | `EXPO_PUBLIC_GOOGLE_VISION_API_KEY`, `EXPO_PUBLIC_AZURE_VISION_*` |
+| **Optional recipe images** | Airguru Lab (if used) | `EXPO_PUBLIC_AIRGURU_LAB_API_KEY` |
 
 ### Convex
-1. Create account at [convex.dev](https://convex.dev)
-2. Create a new project
-3. Copy deployment URL to `.env` as `EXPO_PUBLIC_CONVEX_URL`
+
+1. Create a project at [convex.dev](https://convex.dev).
+2. Set **`EXPO_PUBLIC_CONVEX_URL`** in `.env.local` (and in Expo for EAS builds).
 
 ### OpenAI (Convex server)
-1. Sign up at [platform.openai.com](https://platform.openai.com)
-2. Create an API key and add billing if required
-3. In **Convex** → your project → **Settings → Environment variables**, add **`OPENAI_API_KEY`**
-4. Deploy or sync so **`convex/Ai.js`** actions can call OpenAI (logs appear in Convex, not Metro)
 
-### OCR APIs (Optional)
-- ML Kit works offline (bundled with app)
-- OCR APIs are fallbacks if ML Kit unavailable
-- See `services/ocr/` for setup instructions
+1. Create an API key at [platform.openai.com](https://platform.openai.com).
+2. Add **`OPENAI_API_KEY`** under Convex → **Settings → Environment variables**.
+3. Deploy functions so `convex/Ai.js` can call the API (Convex logs, not Metro).
+
+### OCR APIs (optional)
+
+- On-device ML Kit works without cloud keys when bundled in your build.
+- Google / Azure variables enable optional cloud OCR tiers — see `services/ocr/`.
 
 ## 📱 Building for Production
 
-### Android
+### Prerequisites for Android APK/AAB
+
+- Completed **`eas login`** and **`eas init`** (or equivalent project link).
+- **Convex**: `npx convex deploy` so production URLs match what you put in **`EXPO_PUBLIC_CONVEX_URL`** for production builds.
+- **Expo dashboard**: all **`EXPO_PUBLIC_*`** variables needed at runtime are defined for the **production** environment.
+- **Convex dashboard**: **`OPENAI_API_KEY`** set on that deployment.
+
+### Android — installable APK (`production-apk`)
+
+For an **APK** you can sideload, share internally, or install outside the Play Store, use the **`production-apk`** profile in `eas.json` (inherits **`production`** settings but outputs **APK** instead of **AAB**).
 
 ```bash
-# Play Store (AAB)
-npx eas-cli@latest build --platform android --profile production
-
-# Same production env/secrets, but output APK for sideloading / testing
 npx eas-cli@latest build --platform android --profile production-apk
+```
 
-# Or build locally
+On the first Android build, EAS usually offers to **generate and store a keystore**. Accept unless you already manage signing keys; download any credential backup EAS provides and **keep it private** — do not commit it to the repo.
+
+When the build completes, download the **`.apk`** from the Expo build page. On the device, allow installation from your browser or files app if Android prompts you.
+
+### Android — Play Store bundle (AAB)
+
+```bash
+npx eas-cli@latest build --platform android --profile production
+```
+
+### Android — local release build (advanced)
+
+Requires Android SDK / Android Studio and typically `npx expo prebuild` if native folders are generated:
+
+```bash
 npx expo run:android --variant release
 ```
 
-### iOS
+### iOS (App Store / TestFlight)
 
 ```bash
-# Using EAS Build
 eas build --platform ios --profile production
+```
 
-# Or build locally (requires Mac)
+Local (Mac + Xcode):
+
+```bash
 npx expo run:ios --configuration Release
 ```
+
+### Checklist if the installed APK shows “Missing Convex URL”
+
+1. Add **`EXPO_PUBLIC_CONVEX_URL`** to Expo **environment variables** for **production**.
+2. Trigger a **new** EAS build (old APK will not pick up new env vars).
+
+---
 
 ## 🎨 Features in Detail
 
