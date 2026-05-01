@@ -5,6 +5,8 @@ import { UserContext } from '../../context/UserContext'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { ChatWithHealthCoach, BuildUserContext } from '../../services/ai/HealthCoachService'
+import { getConvexClient } from '../../utils/convexClient'
+import { scheduleHealthCoachWarmup } from '../../utils/healthCoachWarmup'
 import { LinearGradient } from 'expo-linear-gradient'
 import { HugeiconsIcon } from '@hugeicons/react-native'
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
@@ -62,24 +64,46 @@ export default function HealthCoachChat() {
         }
     }, [])
     
+    const today = moment().format('DD/MM/YYYY')
+
     // Get today's macros
     const dailyMacros = useQuery(
         api.MealPlan.GetDailyMacronutrients,
-        user?._id ? { date: moment().format('DD/MM/YYYY'), uid: user._id } : 'skip'
+        user?._id ? { date: today, uid: user._id } : 'skip'
     )
-    
+
     // Get recent meals
     const recentMealsQuery = useQuery(
         api.MealPlan.GetTodaysMealPlan,
-        user?._id ? { uid: user._id, date: moment().format('DD/MM/YYYY') } : 'skip'
+        user?._id ? { uid: user._id, date: today } : 'skip'
     )
     const recentMeals = Array.isArray(recentMealsQuery) ? recentMealsQuery : []
-    
+
+    // Get today's water intake
+    const waterQuery = useQuery(
+        api.Tracking.GetWaterIntake,
+        user?._id ? { uid: user._id, date: today } : 'skip'
+    )
+
+    // Get today's exercise logs
+    const exerciseQuery = useQuery(
+        api.Tracking.GetExerciseLogs,
+        user?._id ? { uid: user._id, date: today } : 'skip'
+    )
+    const exerciseLogs = Array.isArray(exerciseQuery) ? exerciseQuery : []
+
     // Build user context - only build if we have user data
     const userContext = useMemo(() => {
         if (!user?._id) return ''
-        return BuildUserContext(user, dailyMacros || {}, recentMeals, {})
-    }, [user, dailyMacros, recentMeals])
+        return BuildUserContext(
+            user,
+            dailyMacros || {},
+            recentMeals,
+            {},
+            waterQuery || {},
+            exerciseLogs
+        )
+    }, [user, dailyMacros, recentMeals, waterQuery, exerciseLogs])
     
     useEffect(() => {
         // Add welcome message
@@ -92,6 +116,12 @@ export default function HealthCoachChat() {
             }])
         }
     }, [])
+
+    // Backup warm-up if user opens Health Coach without visiting Home first.
+    useEffect(() => {
+        if (!user?._id) return
+        scheduleHealthCoachWarmup(getConvexClient())
+    }, [user?._id])
     
     useEffect(() => {
         // Scroll to bottom when new message arrives
@@ -232,7 +262,9 @@ export default function HealthCoachChat() {
                         }]}>
                             <ActivityIndicator size="small" color={colors.PRIMARY} />
                             <Text style={[styles.loadingText, { color: colors.TEXT_SECONDARY }]}>
-                                Thinking…
+                                {messages.filter((m) => m.role === 'user').length <= 1
+                                    ? 'Connecting… First reply may take a moment.'
+                                    : 'Thinking…'}
                             </Text>
                         </View>
                     </AnimatedView>

@@ -10,77 +10,77 @@ import { api } from "../../convex/_generated/api"
 /**
  * Build user context for AI health coach
  */
-export const BuildUserContext = (user, dailyMacros, recentMeals, progressData) => {
+export const BuildUserContext = (user, dailyMacros, recentMeals, progressData, waterData, exerciseLogs) => {
     if (!user) return ""
-    
-    // Ensure all inputs are safe
-    const safeDailyMacros = dailyMacros || {}
-    const safeRecentMeals = Array.isArray(recentMeals) ? recentMeals : []
-    const safeProgressData = progressData || {}
-    
-    const context = {
-        profile: {
-            name: user.name || "User",
-            age: user.age || "Not specified",
-            weight: user.weight ? `${user.weight} kg` : "Not set",
-            height: user.height ? `${user.height} ft` : "Not set",
-            gender: user.gender || "Not specified",
-            goal: user.goal || "Not set"
-        },
-        goals: {
-            calories: user.calories || 0,
-            proteins: user.proteins || 0,
-            carbohydrates: user.carbohydrates || 0,
-            fat: user.fat || 0,
-            sodium: user.sodium || 0,
-            sugar: user.sugar || 0
-        },
-        today: {
-            calories: safeDailyMacros.calories || 0,
-            // Convex GetDailyMacronutrients returns `protein` (singular).
-            // Keep backward compatibility if any older callsite returns `proteins`.
-            protein: safeDailyMacros.protein ?? safeDailyMacros.proteins ?? 0,
-            carbs: safeDailyMacros.carbohydrates || 0,
-            fat: safeDailyMacros.fat || 0,
-            sodium: safeDailyMacros.sodium || 0,
-            sugar: safeDailyMacros.sugar || 0
-        },
-        recentMeals: safeRecentMeals,
-        progress: safeProgressData
+
+    const safeDailyMacros  = dailyMacros   || {}
+    const safeRecentMeals  = Array.isArray(recentMeals)   ? recentMeals   : []
+    const safeExerciseLogs = Array.isArray(exerciseLogs)  ? exerciseLogs  : []
+    const safeWater        = waterData     || {}
+
+    const g = {
+        calories:      user.calories      || 0,
+        proteins:      user.proteins      || 0,
+        carbohydrates: user.carbohydrates || 0,
+        fat:           user.fat           || 0,
+        sodium:        user.sodium        || 0,
+        sugar:         user.sugar         || 0,
     }
-    
-    // Build context string
-    let contextString = `USER PROFILE:
-- Name: ${context.profile.name}
-- Weight: ${context.profile.weight}
-- Height: ${context.profile.height}
-- Gender: ${context.profile.gender}
-- Goal: ${context.profile.goal}
+    const t = {
+        calories: safeDailyMacros.calories || 0,
+        protein:  safeDailyMacros.protein ?? safeDailyMacros.proteins ?? 0,
+        carbs:    safeDailyMacros.carbohydrates || 0,
+        fat:      safeDailyMacros.fat || 0,
+        sodium:   safeDailyMacros.sodium || 0,
+        sugar:    safeDailyMacros.sugar  || 0,
+    }
 
-DAILY NUTRITION GOALS:
-- Calories: ${context.goals.calories} kcal
-- Protein: ${context.goals.proteins} g
-- Carbohydrates: ${context.goals.carbohydrates} g
-- Fat: ${context.goals.fat} g
-- Sodium: ${context.goals.sodium} mg
-- Sugar: ${context.goals.sugar} g
+    const pct = (a, b) => b ? `${((a / b) * 100).toFixed(0)}%` : '0%'
+    const has = (v) => v && v !== 'Not specified' && v !== 'Not set'
 
-TODAY'S INTAKE:
-- Calories: ${context.today.calories.toFixed(0)} / ${context.goals.calories || 1} kcal (${context.goals.calories ? ((context.today.calories / context.goals.calories) * 100).toFixed(0) : 0}%)
-- Protein: ${context.today.protein.toFixed(0)} / ${context.goals.proteins || 1} g (${context.goals.proteins ? ((context.today.protein / context.goals.proteins) * 100).toFixed(0) : 0}%)
-- Carbs: ${context.today.carbs.toFixed(0)} / ${context.goals.carbohydrates || 1} g (${context.goals.carbohydrates ? ((context.today.carbs / context.goals.carbohydrates) * 100).toFixed(0) : 0}%)
-- Fat: ${context.today.fat.toFixed(0)} / ${context.goals.fat || 1} g (${context.goals.fat ? ((context.today.fat / context.goals.fat) * 100).toFixed(0) : 0}%)
-- Sodium: ${context.today.sodium.toFixed(0)} / ${context.goals.sodium || 1} mg (${context.goals.sodium ? ((context.today.sodium / context.goals.sodium) * 100).toFixed(0) : 0}%)
-- Sugar: ${context.today.sugar.toFixed(0)} / ${context.goals.sugar || 1} g (${context.goals.sugar ? ((context.today.sugar / context.goals.sugar) * 100).toFixed(0) : 0}%)
+    // Profile line — only include fields that have real values
+    const profileParts = [
+        `Name: ${user.name || 'User'}`,
+        has(user.weight)    && `Weight: ${user.weight} kg`,
+        has(user.height)    && `Height: ${user.height} ft`,
+        has(user.gender)    && `Gender: ${user.gender}`,
+        has(user.goal)      && `Goal: ${user.goal}`,
+        user.goalWeight     && `Target: ${user.goalWeight} kg`,
+    ].filter(Boolean).join(', ')
 
-RECENT MEALS: ${context.recentMeals && Array.isArray(context.recentMeals) && context.recentMeals.length > 0 
-    ? context.recentMeals.slice(0, 5).map(m => `- ${m?.mealType || 'Meal'}: ${m?.foodName || 'Meal'} (${m?.calories || 0} kcal)`).join('\n')
-    : 'No meals logged today'}
+    const goalsSet = g.calories > 0
 
-PROGRESS NOTES:
-${context.progress.notes || 'No specific progress notes available'}`
+    const intakeLine = goalsSet ? [
+        `Cal: ${t.calories.toFixed(0)}/${g.calories} kcal (${pct(t.calories, g.calories)})`,
+        g.proteins      > 0 && `Pro: ${t.protein.toFixed(0)}/${g.proteins}g (${pct(t.protein, g.proteins)})`,
+        g.carbohydrates > 0 && `Carb: ${t.carbs.toFixed(0)}/${g.carbohydrates}g (${pct(t.carbs, g.carbohydrates)})`,
+        g.fat           > 0 && `Fat: ${t.fat.toFixed(0)}/${g.fat}g (${pct(t.fat, g.fat)})`,
+    ].filter(Boolean).join(' | ') : 'Goals not set'
 
-    return contextString
+    const mealLines = safeRecentMeals.length > 0
+        ? safeRecentMeals.slice(0, 5).map(m => `- ${m?.mealType || 'Meal'}: ${m?.foodName || 'Item'} (${m?.calories || 0} kcal)`).join('\n')
+        : 'None logged'
+
+    // Water: only include if logged today
+    const waterMl   = safeWater.total || 0
+    const waterLine = waterMl > 0 ? `${waterMl} ml today` : null
+
+    // Exercise: summarise calories burned and activities
+    const totalBurned = safeExerciseLogs.reduce((s, e) => s + (e.caloriesBurned || 0), 0)
+    const exerciseLine = safeExerciseLogs.length > 0
+        ? safeExerciseLogs.map(e => `${e.exerciseType} ${e.duration}min (~${e.caloriesBurned} kcal)`).join(', ')
+        : null
+
+    let ctx = `Profile: ${profileParts}
+Goals (daily): ${goalsSet ? `Cal ${g.calories} kcal | Pro ${g.proteins}g | Carb ${g.carbohydrates}g | Fat ${g.fat}g` : 'Not set'}
+Today intake: ${intakeLine}${totalBurned > 0 ? ` | Net cal: ~${Math.round(t.calories - totalBurned)} kcal` : ''}
+Meals: ${mealLines}`
+
+    if (exerciseLine) ctx += `\nExercise: ${exerciseLine}`
+    if (waterLine)    ctx += `\nWater: ${waterLine}`
+    if (progressData?.notes) ctx += `\nNotes: ${progressData.notes}`
+
+    return ctx
 }
 
 /**

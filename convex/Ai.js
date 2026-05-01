@@ -8,19 +8,21 @@ async function assertUserExists(ctx, uid) {
   if (!user) throw new Error("User not found");
 }
 
-/** Strip markdown-style formatting from health coach replies (plain text in-app). */
+/**
+ * Strip heavy markdown (bold, italic, headers, code fences) but keep
+ * plain bullet lines (- item) so the model can use them when appropriate.
+ */
 function sanitizeHealthCoachReply(raw) {
   if (!raw || typeof raw !== "string") return "";
   let s = raw
-    .replace(/\*\*\*([^*]*)\*\*\*/g, "$1")
-    .replace(/\*\*([^*]*)\*\*/g, "$1")
-    .replace(/\*([^*\n]+)\*/g, "$1")
-    .replace(/_{1,2}([^_\n]+)_{1,2}/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/\n{3,}/g, "\n\n");
-  s = s.replace(/[`*]{2,}/g, "").trim();
-  return s;
+    .replace(/\*\*\*([^*]*)\*\*\*/g, "$1")   // bold-italic
+    .replace(/\*\*([^*]*)\*\*/g, "$1")         // bold
+    .replace(/\*([^*\n]+)\*/g, "$1")            // italic
+    .replace(/_{1,2}([^_\n]+)_{1,2}/g, "$1")   // underline/italic
+    .replace(/^#{1,6}\s+/gm, "")               // headings
+    .replace(/`{1,3}[^`]*`{1,3}/g, "")         // inline / fenced code
+    .replace(/\n{3,}/g, "\n\n");               // excess blank lines
+  return s.trim();
 }
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -189,15 +191,12 @@ export const ChatWithHealthCoachAI = action({
   handler: async (ctx, args) => {
     await assertUserExists(ctx, args.uid);
 
-    const systemPrompt = `You are a dietitian nutritionist coaching the user in the WELLUS app.
-Reply in 2-4 plain sentences. No markdown, no bullet points, no emojis.
-Be specific using their numbers when relevant. One actionable suggestion when it fits.
-For medical concerns, refer them to a clinician.
+    const systemPrompt = `Clinical dietitian in WELLUS. Use the user's exact numbers when relevant. Key point first, no filler. Bullets ("-") only for 3+ distinct items; otherwise short sentences. No bold, headers, or emojis. Medical symptoms → refer to clinician.
 
 User Context:
 ${args.userContext || ""}`.trim();
 
-    const history = Array.isArray(args.chatHistory) ? args.chatHistory.slice(-10) : [];
+    const history = Array.isArray(args.chatHistory) ? args.chatHistory.slice(-8) : [];
 
     const response = await retryWithBackoff(
       async () =>
@@ -207,8 +206,8 @@ ${args.userContext || ""}`.trim();
             ...history,
             { role: "user", content: args.userMessage },
           ],
-          temperature: 0.45,
-          max_tokens: 380,
+          temperature: 0.4,
+          max_tokens: 420,
         }),
       3,
       750
@@ -477,3 +476,23 @@ Rules:
   },
 });
 
+/**
+ * Cheap OpenAI round-trip from Convex to warm TLS + model path before the first real Health Coach message.
+ * Uses max_tokens: 1 (~negligible cost). Skips if OPENAI_API_KEY is missing.
+ */
+export const PingHealthCoachBackend = action({
+  args: {},
+  handler: async () => {
+    try {
+      if (!OPENAI_API_KEY) return { ok: false };
+      await callOpenAIMessages({
+        messages: [{ role: "user", content: "." }],
+        temperature: 0,
+        max_tokens: 1,
+      });
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  },
+});

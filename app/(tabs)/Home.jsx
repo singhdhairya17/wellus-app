@@ -15,6 +15,8 @@ import { Chat01Icon } from '@hugeicons/core-free-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated'
 import { triggerHaptic } from '../../utils/haptics'
+import { getConvexClient } from '../../utils/convexClient'
+import { scheduleHealthCoachWarmup } from '../../utils/healthCoachWarmup'
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity)
 
@@ -34,6 +36,12 @@ function Home() {
             router.replace('/')
         }
     }, [user])
+
+    // Warm Health Coach AI path while user is on Home so first reply feels faster on APK/cold starts.
+    useEffect(() => {
+        if (!user?._id) return
+        scheduleHealthCoachWarmup(getConvexClient())
+    }, [user?._id])
 
     // Calculate tab bar height for proper spacing
     // Tab bar is typically 60px + safe area bottom (iOS) or 60px (Android)

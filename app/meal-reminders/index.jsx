@@ -10,6 +10,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { LinearGradient } from 'expo-linear-gradient'
 import { requestPermissionsAsyncSafe } from '../../utils/expoNotificationsGate'
+import { scheduleMealReminder, cancelMealReminder } from '../../services/reminders/MealReminderScheduler'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { triggerHaptic } from '../../utils/haptics'
 
@@ -69,6 +70,23 @@ export default function MealRemindersPage() {
         
         try {
             const defaultMeal = MEAL_TYPES.find(m => m.key === mealType)
+            const nextEnabled = !isEnabled
+            const reminderHour =
+                mealType === 'Water'
+                    ? (defaultMeal?.defaultHour ?? 10)
+                    : (currentReminder?.hour ?? defaultMeal?.defaultHour ?? 12)
+            const reminderMinute =
+                mealType === 'Water'
+                    ? (defaultMeal?.defaultMinute ?? 0)
+                    : (currentReminder?.minute ?? defaultMeal?.defaultMinute ?? 0)
+
+            if (nextEnabled) {
+                const { status } = await requestPermissionsAsyncSafe()
+                if (status !== 'granted') {
+                    Alert.alert('Permission Required', 'Please enable notifications in settings to receive reminders.')
+                    return
+                }
+            }
             
             // For Water, use smart reminder logic (no specific time needed)
             // For other meals, use the configured time
@@ -76,33 +94,34 @@ export default function MealRemindersPage() {
                 await toggleReminder({
                     uid: user._id,
                     mealType: mealType,
-                    enabled: !isEnabled,
-                    hour: 0, // Not used for water
-                    minute: 0, // Not used for water
+                    enabled: nextEnabled,
+                    hour: reminderHour,
+                    minute: reminderMinute,
                     daysOfWeek: [0, 1, 2, 3, 4, 5, 6] // All days
                 })
             } else {
                 await toggleReminder({
                     uid: user._id,
                     mealType: mealType,
-                    enabled: !isEnabled,
-                    hour: currentReminder?.hour || defaultMeal?.defaultHour || 12,
-                    minute: currentReminder?.minute || defaultMeal?.defaultMinute || 0,
+                    enabled: nextEnabled,
+                    hour: reminderHour,
+                    minute: reminderMinute,
                     daysOfWeek: currentReminder?.daysOfWeek || [0, 1, 2, 3, 4, 5, 6] // All days
                 })
             }
             
-            // Request notification permissions if enabling
-            if (!isEnabled) {
-                const { status } = await requestPermissionsAsyncSafe()
-                if (status !== 'granted') {
-                    Alert.alert('Permission Required', 'Please enable notifications in settings to receive reminders.')
-                } else if (mealType === 'Water') {
+            // Schedule or cancel the actual push notification
+            if (nextEnabled) {
+                await scheduleMealReminder(mealType, reminderHour, reminderMinute)
+
+                if (mealType === 'Water') {
                     Alert.alert(
                         'Water Reminders Enabled',
-                        'You\'ll receive notifications if you haven\'t drunk water in 1.5-2 hours during waking hours (6 AM - 10 PM).'
+                        "You'll get a daily reminder around 10:00 AM to log water in Wellus (sound + banner)."
                     )
                 }
+            } else {
+                await cancelMealReminder(mealType)
             }
         } catch (error) {
             console.error('Error toggling reminder:', error)
@@ -159,6 +178,11 @@ export default function MealRemindersPage() {
                 daysOfWeek: currentReminder?.daysOfWeek || [0, 1, 2, 3, 4, 5, 6]
             })
             
+            // Reschedule notification with the new time if reminder is active
+            if (isEnabled) {
+                await scheduleMealReminder(selectedMealType, selectedHour, selectedMinute)
+            }
+
             setShowTimePicker(false)
             triggerHaptic.success()
         } catch (error) {

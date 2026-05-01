@@ -10,6 +10,11 @@
 import moment from 'moment'
 import { ensureNotificationHandler, loadExpoNotifications } from '../../utils/expoNotificationsGate'
 
+const CHANNEL_ID = 'wellus-reminders'
+
+/** Smart interval water reminders only — do not use cancelAll (would wipe meal reminders). */
+const WATER_SMART_NOTIFICATION_ID = 'wellus-reminder-water-smart'
+
 async function getNotifications() {
     await ensureNotificationHandler()
     return loadExpoNotifications()
@@ -79,8 +84,7 @@ export const scheduleWaterReminders = async (lastWaterTimestamp, dailyGoal = 250
         const Notifications = await getNotifications()
         if (!Notifications) return
 
-        // Cancel existing water reminders
-        await Notifications.cancelAllScheduledNotificationsAsync()
+        await Notifications.cancelScheduledNotificationAsync(WATER_SMART_NOTIFICATION_ID)
 
         // Only schedule if during waking hours
         if (!isWakingHours()) {
@@ -121,9 +125,21 @@ export const scheduleWaterReminders = async (lastWaterTimestamp, dailyGoal = 250
     }
 }
 
-/**
- * Schedule a single water reminder notification
- */
+async function ensureWellusChannel(Notifications) {
+    if (typeof Notifications.setNotificationChannelAsync !== 'function') return
+    const { Platform } = await import('react-native')
+    if (Platform.OS !== 'android') return
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+        name: 'Wellus Reminders',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#14B8A6',
+        sound: 'default',
+        enableVibrate: true,
+        showBadge: true,
+    })
+}
+
 const scheduleNotification = async (Notifications, hour, minute, dailyGoal) => {
     const triggerDate = moment().hour(hour).minute(minute).second(0)
 
@@ -132,12 +148,16 @@ const scheduleNotification = async (Notifications, hour, minute, dailyGoal) => {
         triggerDate.add(1, 'day')
     }
 
+    await ensureWellusChannel(Notifications)
+
     await Notifications.scheduleNotificationAsync({
+        identifier: WATER_SMART_NOTIFICATION_ID,
         content: {
-            title: '💧 Time to Drink Water!',
-            body: `You haven't drunk water in a while. Stay hydrated! Your daily goal is ${(dailyGoal / 1000).toFixed(1)}L.`,
-            sound: true,
-            priority: Notifications.AndroidNotificationPriority.HIGH,
+            title: 'Wellus · Hydration Check 💧',
+            body: `You haven't had water in a while. Stay hydrated! Your daily goal is ${(dailyGoal / 1000).toFixed(1)}L.`,
+            sound: 'default',
+            channelId: CHANNEL_ID,
+            data: { type: 'water-reminder' },
         },
         trigger: {
             date: triggerDate.toDate(),
@@ -152,13 +172,17 @@ export const sendImmediateWaterReminder = async (dailyGoal = 2500) => {
     const Notifications = await getNotifications()
     if (!Notifications) return
 
+    await ensureWellusChannel(Notifications)
+
     await Notifications.scheduleNotificationAsync({
+        identifier: 'wellus-reminder-water-immediate',
         content: {
-            title: '💧 Time to Drink Water!',
-            body: `You haven't drunk water in a while. Stay hydrated! Your daily goal is ${(dailyGoal / 1000).toFixed(1)}L.`,
-            sound: true,
-            priority: Notifications.AndroidNotificationPriority.HIGH,
+            title: 'Wellus · Hydration Check 💧',
+            body: `You haven't had water in a while. Stay hydrated! Your daily goal is ${(dailyGoal / 1000).toFixed(1)}L.`,
+            sound: 'default',
+            channelId: CHANNEL_ID,
+            data: { type: 'water-reminder' },
         },
-        trigger: null, // Send immediately
+        trigger: null,
     })
 }

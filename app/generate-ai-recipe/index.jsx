@@ -74,6 +74,7 @@ const styles = StyleSheet.create({
         marginTop: 15,
         height: 150,
         textAlignVertical: 'top',
-        backgroundColor: Colors.WHITE
+        backgroundColor: Colors.WHITE,
+        color: '#000'
     }
 })
