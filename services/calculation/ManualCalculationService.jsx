@@ -1,144 +1,148 @@
 /**
- * Manual BMR/TDEE Calculation Service
- * Fallback when AI API is unavailable (rate limits, etc.)
+ * Manual BMR / TDEE / macro calculator (Mifflin-St Jeor + activity multipliers).
+ * This is the only nutrition-goal calculator the app uses; the AI-based path
+ * was removed because it was producing impossibly low calorie targets due to
+ * a height-parsing bug.
  */
 
+import {
+    activityMultiplier,
+    legacyHeightToCm,
+} from '../../utils/measurements';
+
+const DEFAULT_AGE = 28;
+const DEFAULT_ACTIVITY_LEVEL = 'moderate';
+const DEFAULT_HEIGHT_CM = 170;
+
 /**
- * Convert height from feet (e.g., "5.10") to centimeters
+ * Resolve a height in cm from inputs. Accepts either a numeric heightCm
+ * or the legacy "X.YY" feet+inches string. Falls back to DEFAULT_HEIGHT_CM.
  */
-const convertHeightToCm = (heightFt) => {
-    if (!heightFt) return 170; // Default 5'7"
-    const parts = heightFt.toString().split('.');
-    const feet = parseFloat(parts[0]) || 5;
-    const inches = parseFloat(parts[1]) || 7;
-    const totalInches = feet * 12 + inches;
-    return totalInches * 2.54;
+const resolveHeightCm = (heightCm, legacyHeight) => {
+    if (Number.isFinite(heightCm) && heightCm > 0) return heightCm;
+    const parsed = legacyHeightToCm(legacyHeight);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return DEFAULT_HEIGHT_CM;
 };
 
-/**
- * Calculate BMR using Mifflin-St Jeor Equation
- */
-const calculateBMR = (weightKg, heightCm, gender, age = 28) => {
+const calculateBMR = (weightKg, heightCm, gender, age) => {
     const weight = parseFloat(weightKg) || 70;
-    const height = heightCm || 170;
-    
-    if (gender === 'Male') {
-        // Men: BMR = 10 × weight(kg) + 6.25 × height(cm) - 5 × age + 5
-        return (10 * weight) + (6.25 * height) - (5 * age) + 5;
-    } else {
-        // Women: BMR = 10 × weight(kg) + 6.25 × height(cm) - 5 × age - 161
-        return (10 * weight) + (6.25 * height) - (5 * age) - 161;
+    const height = Number.isFinite(heightCm) && heightCm > 0 ? heightCm : DEFAULT_HEIGHT_CM;
+    const ageYears = Number.isFinite(age) && age > 0 ? age : DEFAULT_AGE;
+    const isMale = typeof gender === 'string' && gender.trim().toLowerCase() === 'male';
+    if (isMale) {
+        return (10 * weight) + (6.25 * height) - (5 * ageYears) + 5;
     }
+    return (10 * weight) + (6.25 * height) - (5 * ageYears) - 161;
 };
 
-/**
- * Calculate TDEE (Total Daily Energy Expenditure)
- * Using moderate activity level (1.55) as default
- */
-const calculateTDEE = (bmr, activityLevel = 1.55) => {
-    return bmr * activityLevel;
+const calculateTDEE = (bmr, activityLevel) => {
+    return bmr * activityMultiplier(activityLevel);
 };
 
-/**
- * Adjust calories based on goal
- */
 const adjustCaloriesForGoal = (tdee, goal) => {
     switch (goal) {
         case 'Weight Loss':
-            return tdee - 500; // Deficit for weight loss
+            return tdee - 500;
         case 'Muscle Gain':
-            return tdee + 300; // Surplus for muscle gain
+            return tdee + 300;
         case 'Weight Gain':
-            return tdee + 500; // Surplus for weight gain
+            return tdee + 500;
         default:
             return tdee;
     }
 };
 
-/**
- * Calculate macronutrients based on calories and goal
- */
 const calculateMacros = (calories, goal) => {
-    let carbPercent, proteinPercent, fatPercent;
-    
+    let carbPercent;
+    let proteinPercent;
+    let fatPercent;
+
     switch (goal) {
         case 'Weight Loss':
-            carbPercent = 0.40; // 40% carbs
-            proteinPercent = 0.30; // 30% protein
-            fatPercent = 0.30; // 30% fat
+            carbPercent = 0.40;
+            proteinPercent = 0.30;
+            fatPercent = 0.30;
             break;
         case 'Muscle Gain':
-            carbPercent = 0.45; // 45% carbs
-            proteinPercent = 0.30; // 30% protein
-            fatPercent = 0.25; // 25% fat
+            carbPercent = 0.45;
+            proteinPercent = 0.30;
+            fatPercent = 0.25;
             break;
         case 'Weight Gain':
-            carbPercent = 0.50; // 50% carbs
-            proteinPercent = 0.20; // 20% protein
-            fatPercent = 0.30; // 30% fat
+            carbPercent = 0.50;
+            proteinPercent = 0.20;
+            fatPercent = 0.30;
             break;
         default:
             carbPercent = 0.45;
             proteinPercent = 0.30;
             fatPercent = 0.25;
     }
-    
-    // Calculate macros (1g protein = 4 cal, 1g carb = 4 cal, 1g fat = 9 cal)
+
     const proteins = Math.round((calories * proteinPercent) / 4);
     const carbohydrates = Math.round((calories * carbPercent) / 4);
     const fat = Math.round((calories * fatPercent) / 9);
-    const sodium = 2300; // FDA recommendation
-    const sugar = Math.round((calories * 0.10) / 4); // 10% of calories from sugar (WHO recommendation)
-    
+    const sodium = 2300;
+    const sugar = Math.round((calories * 0.10) / 4);
+
     return {
         calories: Math.round(calories),
         proteins,
         carbohydrates,
         fat,
         sodium,
-        sugar
+        sugar,
     };
 };
 
 /**
- * Main function to calculate all nutrition goals manually
- * @param {string} weight - Weight in kg
- * @param {string} height - Height in feet (e.g., "5.10")
- * @param {string} gender - "Male" or "Female"
- * @param {string} goal - "Weight Loss", "Muscle Gain", or "Weight Gain"
- * @returns {object} Nutrition goals object
+ * Compute calorie + macro targets.
+ *
+ * Backwards-compatible signature: existing callers that pass
+ * (weight, height, gender, goal) still work and get DEFAULT_AGE +
+ * 'moderate' activity. New callers should use the (weight, options) form:
+ *
+ *   CalculateNutritionGoalsManually(weight, {
+ *     heightCm, height, gender, goal, age, activityLevel,
+ *   })
  */
-export const CalculateNutritionGoalsManually = (weight, height, gender, goal) => {
+export const CalculateNutritionGoalsManually = (weight, heightOrOptions, gender, goal) => {
     try {
-        // Convert height to cm
-        const heightCm = convertHeightToCm(height);
-        
-        // Calculate BMR
-        const bmr = calculateBMR(weight, heightCm, gender, 28);
-        
-        // Calculate TDEE (moderate activity level)
-        const tdee = calculateTDEE(bmr, 1.55);
-        
-        // Adjust for goal
-        const targetCalories = adjustCaloriesForGoal(tdee, goal);
-        
-        // Calculate macros
-        const macros = calculateMacros(targetCalories, goal);
-        
-        // Calculation complete - no logging needed for performance
-        
-        return macros;
+        let heightCm;
+        let legacyHeight;
+        let resolvedGender = gender;
+        let resolvedGoal = goal;
+        let age;
+        let activityLevel;
+
+        if (heightOrOptions && typeof heightOrOptions === 'object') {
+            const opts = heightOrOptions;
+            heightCm = opts.heightCm;
+            legacyHeight = opts.height;
+            resolvedGender = opts.gender ?? gender;
+            resolvedGoal = opts.goal ?? goal;
+            age = opts.age;
+            activityLevel = opts.activityLevel;
+        } else {
+            // Legacy positional call: heightOrOptions is the legacy "X.YY" string
+            legacyHeight = heightOrOptions;
+        }
+
+        const cm = resolveHeightCm(heightCm, legacyHeight);
+        const bmr = calculateBMR(weight, cm, resolvedGender, age);
+        const tdee = calculateTDEE(bmr, activityLevel);
+        const targetCalories = adjustCaloriesForGoal(tdee, resolvedGoal);
+        return calculateMacros(targetCalories, resolvedGoal);
     } catch (error) {
         console.error('Manual calculation error:', error);
-        // Return safe defaults
         return {
             calories: 2000,
             proteins: 100,
             carbohydrates: 225,
             fat: 56,
             sodium: 2300,
-            sugar: 50
+            sugar: 50,
         };
     }
 };
-

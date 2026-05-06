@@ -1,11 +1,10 @@
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native'
-import React, { useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import React, { useContext, useState, useMemo, useCallback } from 'react'
 import moment from 'moment'
 import { useTheme } from '../../context/ThemeContext'
 import { UserContext } from '../../context/UserContext'
-import { useConvex } from 'convex/react'
+import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { RefreshDataContext } from '../../context/RefreshDataContext'
 import { GenerateMacroExplanation } from '../../services/ai/XAIService'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useIsFocused } from '@react-navigation/native'
@@ -16,10 +15,9 @@ import Animated, {
     Easing
 } from 'react-native-reanimated'
 import { triggerHaptic } from '../../utils/haptics'
-import { logger } from '../../utils/logger'
 
 // Move MacroItem outside to prevent recreation on every render
-const MacroItem = React.memo(({ label, current, goal, unit, color, index = 0, colors, getProgressColor, getTrafficLightStatus }) => {
+function MacroItemComponent({ label, current, goal, unit, color, index = 0, colors, getProgressColor, getTrafficLightStatus }) {
     const [showExplanation, setShowExplanation] = useState(false);
     const percentage = useMemo(() => Math.min((current / (goal || 1)) * 100, 100), [current, goal]);
     const progressColor = useMemo(() => getProgressColor(current, goal, label), [current, goal, label, getProgressColor]);
@@ -35,7 +33,7 @@ const MacroItem = React.memo(({ label, current, goal, unit, color, index = 0, co
     // Animate progress bar - only when values change
     React.useEffect(() => {
         progressWidth.value = withTiming(percentage, {
-            duration: 1200,
+            duration: 420,
             easing: Easing.out(Easing.cubic),
         });
     }, [percentage, progressWidth]);
@@ -152,7 +150,9 @@ const MacroItem = React.memo(({ label, current, goal, unit, color, index = 0, co
             </LinearGradient>
         </View>
     );
-}, (prevProps, nextProps) => {
+}
+
+const MacroItem = React.memo(MacroItemComponent, (prevProps, nextProps) => {
     // Custom comparison - allow re-render if theme or colors change
     if (prevProps.colors?.isDark !== nextProps.colors?.isDark ||
         prevProps.colors?.CARD !== nextProps.colors?.CARD ||
@@ -173,169 +173,32 @@ const MacroItem = React.memo(({ label, current, goal, unit, color, index = 0, co
 function MacronutrientsDashboard({ selectedDate }) {
     const { user } = useContext(UserContext)
     const { colors } = useTheme()
-    const convex = useConvex();
-    const isFocused = useIsFocused(); // Only fetch when screen is focused
-    const [macros, setMacros] = useState({
-        calories: 0,
-        protein: 0,
-        carbohydrates: 0,
-        fat: 0,
-        sodium: 0,
-        sugar: 0
-    });
-    const { refreshData } = useContext(RefreshDataContext)
-    
-    // Use refs to prevent multiple simultaneous requests
-    const isLoadingRef = useRef(false);
-    const lastRefreshRef = useRef(null);
-    const lastUserIdRef = useRef(null);
-    const lastFetchTimeRef = useRef(0);
-    const lastMacrosRef = useRef(null); // Track last set macros to prevent duplicate updates
-    const currentRequestIdRef = useRef(null); // Track current request ID
-    const hasInitializedRef = useRef(false); // Track if component has initialized
-    const timeoutIdRef = useRef(null); // Track scheduled timeout to prevent duplicates
+    const isFocused = useIsFocused()
 
-    // Memoize user ID to prevent unnecessary re-renders
-    const userId = useMemo(() => user?._id, [user?._id]);
+    const userId = useMemo(() => user?._id, [user?._id])
+    const dateToUse = useMemo(
+        () => selectedDate || moment().format('DD/MM/YYYY'),
+        [selectedDate]
+    )
 
-    const GetDailyMacronutrients = useCallback(async () => {
-        if (!userId) return;
-        
-        const now = Date.now();
-        const timeSinceLastFetch = now - lastFetchTimeRef.current;
-        
-        // Create a stable request key based on userId, refreshData, and selectedDate
-        const dateToUse = selectedDate || moment().format('DD/MM/YYYY');
-        const requestKey = `${userId}-${refreshData || 'null'}-${dateToUse}`;
-        
-        // Prevent multiple simultaneous requests
-        if (isLoadingRef.current) {
-            logger.debug('[MacronutrientsDashboard] Request already in progress, skipping...');
-            return;
-        }
-        
-        // If this exact request (same userId + refreshData) is already in progress, skip
-        if (currentRequestIdRef.current === requestKey) {
-            logger.debug('[MacronutrientsDashboard] Duplicate request detected, skipping...');
-            return;
-        }
-        
-        // If userId hasn't changed and refreshData hasn't changed, skip
-        if (lastUserIdRef.current === userId && lastRefreshRef.current === refreshData) {
-            // Only skip if we fetched recently (within 3 seconds) to prevent rapid re-renders
-            if (timeSinceLastFetch < 3000) {
-                logger.debug('[MacronutrientsDashboard] Already fetched for this userId and refreshData, skipping...');
-                return;
-            }
-        }
-        
-        // Set loading flag IMMEDIATELY to prevent duplicate calls
-        isLoadingRef.current = true;
-        currentRequestIdRef.current = requestKey;
-        lastRefreshRef.current = refreshData;
-        lastUserIdRef.current = userId;
-        lastFetchTimeRef.current = now;
-        
-        try {
-            logger.debug('[MacronutrientsDashboard] Fetching macros...', requestKey, now);
-            // Use selectedDate if provided, otherwise use today
-            const dateToUse = selectedDate || moment().format('DD/MM/YYYY');
-            const result = await convex.query(api.MealPlan.GetDailyMacronutrients, {
-                date: dateToUse,
-                uid: userId
-            })
-            
-            const newMacros = result || {
+    const macrosFromServer = useQuery(
+        api.MealPlan.GetDailyMacronutrients,
+        userId && isFocused ? { uid: userId, date: dateToUse } : 'skip'
+    )
+
+    const macros = useMemo(() => {
+        if (!macrosFromServer) {
+            return {
                 calories: 0,
                 protein: 0,
                 carbohydrates: 0,
                 fat: 0,
                 sodium: 0,
-                sugar: 0
-            };
-            
-            // Only update state if data actually changed to prevent duplicate re-renders
-            const macrosKey = JSON.stringify(newMacros);
-            if (lastMacrosRef.current !== macrosKey) {
-                lastMacrosRef.current = macrosKey;
-                setMacros(newMacros);
-                logger.debug('[MacronutrientsDashboard] Macros fetched and updated successfully');
-            } else {
-                logger.debug('[MacronutrientsDashboard] Macros unchanged, skipping state update');
+                sugar: 0,
             }
-        } catch (error) {
-            // Error is logged but doesn't break the UI
-            logger.error('[MacronutrientsDashboard] Error fetching macros:', error);
-        } finally {
-            // Reset immediately for better performance (no delay needed)
-            isLoadingRef.current = false;
-            currentRequestIdRef.current = null;
         }
-    }, [userId, convex, refreshData, selectedDate]);
-
-    useEffect(() => {
-        if (!userId || !isFocused) return; // Only fetch when screen is focused
-        
-        // Skip if timeout is already scheduled (prevents duplicate scheduling from React StrictMode)
-        if (timeoutIdRef.current) {
-            logger.debug('[MacronutrientsDashboard] Timeout already scheduled, skipping duplicate...');
-            return;
-        }
-        
-        // Skip if we've already initialized and nothing has changed
-        if (hasInitializedRef.current && 
-            lastUserIdRef.current === userId && 
-            lastRefreshRef.current === refreshData) {
-            return;
-        }
-        
-        // Skip if already loading (prevents duplicate scheduling)
-        if (isLoadingRef.current) {
-            logger.debug('[MacronutrientsDashboard] Already loading, skipping timeout schedule...');
-            return;
-        }
-        
-        // Create request key immediately and set it to prevent duplicate scheduling
-        const requestKey = `${userId}-${refreshData || 'null'}`;
-        
-        // If this exact request is already scheduled, skip
-        if (currentRequestIdRef.current === requestKey) {
-            logger.debug('[MacronutrientsDashboard] Request already scheduled, skipping duplicate...');
-            return;
-        }
-        
-        // Set request ID immediately to prevent duplicate scheduling
-        currentRequestIdRef.current = requestKey;
-        
-        // Use a longer timeout to debounce rapid calls and prevent React StrictMode double calls
-        timeoutIdRef.current = setTimeout(() => {
-            // Double-check before calling (in case component unmounted or dependencies changed)
-            // Also check if this request is still the current one (prevents stale callbacks)
-            if (userId && isFocused && !isLoadingRef.current && currentRequestIdRef.current === requestKey) {
-                hasInitializedRef.current = true;
-                GetDailyMacronutrients();
-            } else {
-                logger.debug('[MacronutrientsDashboard] Timeout callback skipped - request no longer current or screen not focused');
-            }
-            timeoutIdRef.current = null;
-        }, 250); // Increased debounce time to handle React StrictMode
-        
-        return () => {
-            if (timeoutIdRef.current) {
-                clearTimeout(timeoutIdRef.current);
-                timeoutIdRef.current = null;
-            }
-            // Don't clear currentRequestIdRef here - let it be cleared in the finally block
-        };
-    }, [userId, refreshData, selectedDate, isFocused, GetDailyMacronutrients])
-    
-    // Reset lastMacrosRef and initialization flag when userId changes to allow fresh data
-    useEffect(() => {
-        if (userId && lastUserIdRef.current !== userId) {
-            lastMacrosRef.current = null;
-            hasInitializedRef.current = false;
-        }
-    }, [userId])
+        return macrosFromServer
+    }, [macrosFromServer])
 
     // Get user's personalized goals (from AI calculation)
     const caloriesGoal = user?.calories || 2000;
@@ -420,7 +283,6 @@ function MacronutrientsDashboard({ selectedDate }) {
             }}>
                 <View>
                     <Text style={[styles.title, { color: colors.TEXT }]}>Daily Macronutrients</Text>
-                    <Text style={[styles.subtitle, { color: colors.TEXT_SECONDARY }]}>{moment().format('MMM DD, yyyy')}</Text>
                 </View>
                 <View style={{
                     backgroundColor: colors.PRIMARY + '15',
@@ -469,7 +331,6 @@ const styles = StyleSheet.create({
     container: {
         marginTop: 0,
         marginBottom: 20,
-        marginBottom: 20,
         padding: 24,
         borderRadius: 24,
         elevation: 6,
@@ -479,14 +340,8 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 24,
         fontWeight: '800',
-        marginBottom: 4,
+        marginBottom: 14,
         letterSpacing: -0.5,
-    },
-    subtitle: {
-        fontSize: 13,
-        marginBottom: 0,
-        fontWeight: '500',
-        letterSpacing: 0.2,
     },
     macrosGrid: {
         gap: 14,

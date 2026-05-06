@@ -49,6 +49,25 @@ export default function RecipeIntro({ recipeDetail, showActionSheet }) {
                 lineHeight: 25
             }}>{RecipeJson?.description}</Text>
 
+            {(RecipeJson?.nutritionLabel ||
+                (RecipeJson?.proteins !== undefined &&
+                    RecipeJson?.carbohydrates !== undefined &&
+                    RecipeJson?.fat !== undefined)) ? (
+                <Text style={{ fontSize: 13, marginTop: 8, color: Colors.GRAY, fontStyle: 'italic' }}>
+                    {RecipeJson?.nutritionLabel ||
+                        ('Estimated totals for logging (add to meal plan and mark eaten to update dashboard)')}
+                </Text>
+            ) : null}
+
+            <Text style={{
+                marginTop: 8,
+                fontSize: 15,
+                color: '#555',
+                lineHeight: 22,
+            }}>
+                {`P ${Number(RecipeJson?.proteins ?? 0).toFixed(0)}g · C ${Number(RecipeJson?.carbohydrates ?? 0).toFixed(0)}g · F ${Number(RecipeJson?.fat ?? 0).toFixed(0)}g · Na ${Math.round(Number(RecipeJson?.sodium ?? 0))} mg · Sugar ${Number(RecipeJson?.sugar ?? 0).toFixed(1)} g`}
+            </Text>
+
             <View style={{
                 marginTop: 15,
                 display: 'flex',

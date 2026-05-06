@@ -83,7 +83,7 @@ export default function RecipeDetail() {
                     color: Colors.GRAY,
                     textAlign: 'center',
                     marginBottom: 20
-                }}>The recipe you're looking for doesn't exist or has been deleted.</Text>
+                }}>{'The recipe you\'re looking for doesn\'t exist or has been deleted.'}</Text>
                 <Button title="Go Back" onPress={() => router.back()} />
             </View>
         );
@@ -102,7 +102,7 @@ export default function RecipeDetail() {
                 }}>
                     {/* Recipe Intro  */}
                     <RecipeIntro recipeDetail={recipeDetail} showActionSheet={() => actionSheetRef.current?.show()} />
-                    {/* Recipe Ingrdient  */}
+                    {/* Recipe ingredients */}
                     <RecipeIngredients recipeDetail={recipeDetail} />
                     {/* Cooking Steps  */}
                     <RecipeSteps recipeDetail={recipeDetail} />

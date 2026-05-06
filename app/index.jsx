@@ -13,6 +13,13 @@ import { api } from "@/convex/_generated/api";
 import { RefreshDataContext } from "@/context/RefreshDataContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Onboarding from '../components/common/Onboarding';
+import { hydrateUserSession } from '../utils/loadUserSession';
+
+/** Account age gate: same window as Sign-in (show marketing onboarding only for new accounts). */
+function isAccountRecentlyCreated(creationTimeMs) {
+  if (creationTimeMs == null || typeof creationTimeMs !== 'number') return false;
+  return creationTimeMs > Date.now() - 30 * 60 * 1000;
+}
 
 export default function Index() {
   const router = useRouter();
@@ -55,31 +62,20 @@ export default function Index() {
     }
 
     try {
-      // Check if they've seen onboarding
       const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
-      
-      // If they haven't seen onboarding, show it
-      if (hasSeenOnboarding !== 'true') {
-        setShowOnboarding(true);
-        return;
-      }
 
-      // Check if user is new (created within last 30 minutes) - even if they marked as seen
-      if (user._creationTime) {
-        const creationTime = user._creationTime;
-        const now = Date.now();
-        const thirtyMinutesAgo = now - (30 * 60 * 1000); // 30 minutes window
-        
-        if (creationTime > thirtyMinutesAgo) {
-          const minutesAgo = Math.round((now - creationTime) / 1000 / 60);
-          
-          // Force show onboarding for very new users (within 10 minutes)
-          if (minutesAgo < 10) {
-            await AsyncStorage.removeItem('hasSeenOnboarding');
-            setShowOnboarding(true);
-            return;
-          }
+      // Only show marketing onboarding for genuinely new accounts (fresh Convex user).
+      // Avoid using profile _creationTime — hydrateUserSession preserves users._creationTime on context user.
+      const recentAccount =
+        user._creationTime != null && isAccountRecentlyCreated(user._creationTime);
+
+      if (hasSeenOnboarding !== 'true') {
+        if (recentAccount) {
+          setShowOnboarding(true);
+          return;
         }
+        // Existing account, new device / cleared storage — don't block sign-in
+        await AsyncStorage.setItem('hasSeenOnboarding', 'true');
       }
     } catch (error) {
       console.error('[Onboarding] Error checking onboarding for user:', error);
@@ -164,8 +160,12 @@ export default function Index() {
             return;
           }
 
-          // Set user first - the useEffect will check onboarding
-          setUser(userData);
+          // Run legacy migration + merge active profile before exposing user
+          // to the rest of the app. This fixes the "Home shows 425 kcal until
+          // I open Profile" race after a re-login on cleared data.
+          const hydrated = await hydrateUserSession({ convex, userData });
+          if (!mounted) return;
+          setUser(hydrated);
           
           // Check if user is new and should see onboarding
           if (userData._creationTime) {

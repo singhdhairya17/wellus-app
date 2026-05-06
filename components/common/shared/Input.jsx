@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { useTheme } from '../../../context/ThemeContext'
 import { Ionicons } from '@expo/vector-icons'
 
-export default function Input({ placeholder, password = false, onChangeText, label = '', value }) {
+export default function Input({ placeholder, password = false, onChangeText, label = '', value, ...textInputProps }) {
     const { colors } = useTheme();
     const [showPassword, setShowPassword] = useState(false);
     
@@ -30,6 +30,7 @@ export default function Input({ placeholder, password = false, onChangeText, lab
                     secureTextEntry={password && !showPassword}
                     value={value}
                     onChangeText={(value) => onChangeText(value)}
+                    {...textInputProps}
                     style={{
                         padding: 15,
                         paddingRight: password ? 50 : 15,

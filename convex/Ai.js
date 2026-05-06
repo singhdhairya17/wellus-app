@@ -26,7 +26,8 @@ function sanitizeHealthCoachReply(raw) {
 }
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = "gpt-4o-mini";
+/** Same model for coach, recipes, text parse, vision (labels + meal photos). Set Convex env `OPENAI_MODEL` to override default. */
+const OPENAI_MODEL = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
 
 const isRateLimitError = (err) => {
   const msg = (err && err.message) || "";
@@ -73,6 +74,60 @@ const callOpenAIMessages = async ({
       messages: system
         ? [{ role: "system", content: system }, ...messages]
         : messages,
+    }),
+  });
+
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    const err = new Error(`OpenAI error ${res.status}: ${text.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  if (!res.ok) {
+    const errMsg =
+      json?.error?.message ||
+      json?.message ||
+      JSON.stringify(json).slice(0, 300);
+    const err = new Error(`OpenAI error ${res.status}: ${errMsg}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  return json;
+};
+
+/** Vision completions (nutrition label + meal photo). Uses same {@link OPENAI_MODEL} as text {@link callOpenAIMessages}. */
+const callOpenAIVisionCompletion = async ({
+  system,
+  userContentParts,
+  temperature = 0.2,
+  max_tokens = 500,
+}) => {
+  if (!OPENAI_API_KEY) {
+    throw new Error("AI service not configured (missing OPENAI_API_KEY).");
+  }
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      max_tokens,
+      temperature,
+      messages: [
+        { role: "system", content: system },
+        {
+          role: "user",
+          content: userContentParts,
+        },
+      ],
     }),
   });
 
@@ -236,7 +291,7 @@ export const GenerateAIRecipe = action({
             "Return ONLY a valid JSON array. No markdown. No code fences. No extra text.",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.6,
-          max_tokens: 1200,
+          max_tokens: 1800,
         }),
       3,
       750
@@ -255,98 +310,15 @@ export const GenerateAIRecipe = action({
   },
 });
 
-export const CalculateCaloriesAI = action({
-  args: {
-    uid: v.optional(v.id("users")),
-    prompt: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await assertUserExists(ctx, args.uid);
-
-    // Client sends JSON.stringify(profile fields); parse the leading JSON object.
-    let data = {};
-    try {
-      const jsonMatch = (args.prompt || "").match(/^\s*(\{.*?\})/s);
-      if (jsonMatch) {
-        data = JSON.parse(jsonMatch[1]);
-      }
-    } catch (e) {
-      data = {};
-    }
-
-    const weight = parseFloat(data.weight) || 70; // kg
-    const height = parseFloat(data.height) || 170; // cm
-    const gender = (data.gender || "male").toLowerCase();
-    const goal = (data.goal || "maintenance").toLowerCase();
-    const age = 28; // fixed baseline for Mifflin–St Jeor
-
-    // Mifflin-St Jeor BMR
-    const bmr =
-      gender === "female"
-        ? 10 * weight + 6.25 * height - 5 * age - 161
-        : 10 * weight + 6.25 * height - 5 * age + 5;
-
-    // TDEE with moderate activity (1.55)
-    const tdee = bmr * 1.55;
-
-    // Adjust calories by goal
-    const calories =
-      goal.includes("loss") || goal.includes("lose")
-        ? tdee - 500
-        : goal.includes("gain") || goal.includes("muscle") || goal.includes("bulk")
-        ? tdee + 300
-        : tdee;
-
-    const roundedCalories = Math.round(calories);
-
-    // Macro split by goal
-    let proteinPct;
-    let carbPct;
-    let fatPct;
-    if (goal.includes("loss") || goal.includes("lose")) {
-      proteinPct = 0.35;
-      carbPct = 0.35;
-      fatPct = 0.3;
-    } else if (
-      goal.includes("gain") ||
-      goal.includes("muscle") ||
-      goal.includes("bulk")
-    ) {
-      proteinPct = 0.3;
-      carbPct = 0.45;
-      fatPct = 0.25;
-    } else {
-      proteinPct = 0.3;
-      carbPct = 0.4;
-      fatPct = 0.3;
-    }
-
-    const result = {
-      calories: roundedCalories,
-      proteins: Math.round((roundedCalories * proteinPct) / 4),
-      carbohydrates: Math.round((roundedCalories * carbPct) / 4),
-      fat: Math.round((roundedCalories * fatPct) / 9),
-      sodium: 2300,
-      sugar: 50,
-    };
-
-    return {
-      choices: [
-        {
-          message: {
-            content: JSON.stringify(result),
-          },
-        },
-      ],
-    };
-  },
-});
-
 export const ExtractNutritionFromImageAI = action({
   args: {
     uid: v.optional(v.id("users")),
     base64Image: v.string(),
     mimeType: v.optional(v.string()),
+    purpose: v.optional(
+      v.union(v.literal("nutrition_label"), v.literal("meal_photo"))
+    ),
+    userHint: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await assertUserExists(ctx, args.uid);
@@ -361,6 +333,10 @@ export const ExtractNutritionFromImageAI = action({
         sugar: 0,
         servingSize: "1 serving",
         servingsPerContainer: 1,
+        foodName: "",
+        foodDescription: "",
+        assumptions: "",
+        purpose: args.purpose || "nutrition_label",
       };
     }
 
@@ -369,11 +345,43 @@ export const ExtractNutritionFromImageAI = action({
       ""
     );
     const mimeType = args.mimeType || "image/jpeg";
+    const purpose = args.purpose || "nutrition_label";
 
     const systemPrompt =
       "Return ONLY valid JSON. No markdown. No code fences. No extra text.";
 
-    const userPrompt = `Look at this food nutrition label image and extract the nutritional information.
+    const hintLine = (args.userHint || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 400);
+
+    const userPrompt =
+      purpose === "meal_photo"
+        ? `This is a photo of prepared food (plate, bowl, home-cooked meal, or restaurant dish), NOT a packaged nutrition label.
+
+Optional user context: ${hintLine || "none"}
+
+Estimate total nutrition for everything EDIBLE clearly visible in the frame as ONE combined meal or snack.
+
+Return ONLY a JSON object:
+{
+  "foodName": "string (short name, e.g. Dal chawal)",
+  "foodDescription": "string (one sentence what you see)",
+  "calories": number (kcal for the whole visible portion),
+  "protein": number (grams),
+  "carbohydrates": number (grams),
+  "fat": number (grams),
+  "sodium": number (milligrams, estimated),
+  "sugar": number (grams, estimated),
+  "servingSize": "string (describe the visible portion, e.g. one plate ~350g)",
+  "servingsPerContainer": 1,
+  "assumptions": "string (brief caveats: oil, hidden butter, depth of bowl, etc.)"
+}
+Rules:
+- Numeric fields: numbers only, no units inside the number. Use 0 only if truly unknowable.
+- Sum components (e.g. rice + dal) into totals for the whole visible meal.
+- Be conservative if the image is blurry or angle hides volume.`
+        : `Look at this food nutrition label image and extract the nutritional information.
 Return ONLY a JSON object with this exact structure:
 {
   "calories": number,
@@ -392,63 +400,22 @@ Rules:
 - Return a single JSON object, NOT an array`;
 
     const response = await retryWithBackoff(
-      async () => {
-        if (!OPENAI_API_KEY) {
-          throw new Error("AI service not configured (missing OPENAI_API_KEY).");
-        }
-
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: OPENAI_MODEL,
-            max_tokens: 450,
-            temperature: 0.1,
-            messages: [
-              { role: "system", content: systemPrompt },
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:${mimeType};base64,${base64Data}`,
-                      detail: "low",
-                    },
-                  },
-                  {
-                    type: "text",
-                    text: userPrompt,
-                  },
-                ],
+      async () =>
+        callOpenAIVisionCompletion({
+          system: systemPrompt,
+          max_tokens: purpose === "meal_photo" ? 550 : 450,
+          temperature: purpose === "meal_photo" ? 0.25 : 0.1,
+          userContentParts: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64Data}`,
+                detail: purpose === "meal_photo" ? "high" : "low",
               },
-            ],
-          }),
-        });
-
-        const text = await res.text();
-        let json;
-        try {
-          json = JSON.parse(text);
-        } catch (e) {
-          const err = new Error(`OpenAI error ${res.status}: ${text.slice(0, 300)}`);
-          err.status = res.status;
-          throw err;
-        }
-
-        if (!res.ok) {
-          const errMsg =
-            json?.error?.message || JSON.stringify(json).slice(0, 300);
-          const err = new Error(`OpenAI error ${res.status}: ${errMsg}`);
-          err.status = res.status;
-          throw err;
-        }
-
-        return json;
-      },
+            },
+            { type: "text", text: userPrompt },
+          ],
+        }),
       3,
       750
     );
@@ -463,15 +430,39 @@ Rules:
       parsed = {};
     }
 
+    const toNum = (x) => {
+      const num = Number(x);
+      return Number.isFinite(num) ? num : 0;
+    };
+
     return {
-      calories: parsed.calories || 0,
-      protein: parsed.protein || 0,
-      carbohydrates: parsed.carbohydrates || 0,
-      fat: parsed.fat || 0,
-      sodium: parsed.sodium || 0,
-      sugar: parsed.sugar || 0,
-      servingSize: parsed.servingSize || "1 serving",
-      servingsPerContainer: parsed.servingsPerContainer || 1,
+      calories: toNum(parsed.calories),
+      protein: toNum(parsed.protein ?? parsed.proteins),
+      carbohydrates: toNum(parsed.carbohydrates ?? parsed.carbs),
+      fat: toNum(parsed.fat),
+      sodium: toNum(parsed.sodium),
+      sugar: toNum(parsed.sugar),
+      servingSize:
+        typeof parsed.servingSize === "string"
+          ? parsed.servingSize.slice(0, 200)
+          : "1 serving",
+      servingsPerContainer: Math.max(
+        1,
+        Math.round(toNum(parsed.servingsPerContainer)) || 1
+      ),
+      foodName:
+        purpose === "meal_photo"
+          ? String(parsed.foodName || parsed.recognizedMeal || "").slice(0, 200)
+          : "",
+      foodDescription:
+        purpose === "meal_photo"
+          ? String(parsed.foodDescription || "").slice(0, 500)
+          : "",
+      assumptions:
+        purpose === "meal_photo"
+          ? String(parsed.assumptions || "").slice(0, 500)
+          : "",
+      purpose,
     };
   },
 });

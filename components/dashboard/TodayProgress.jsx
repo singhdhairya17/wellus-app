@@ -1,5 +1,5 @@
 import { View, Text } from 'react-native'
-import React, { useContext, useEffect, useMemo } from 'react'
+import React, { useContext, useEffect, useMemo, useRef } from 'react'
 import moment from 'moment'
 import { useTheme } from '../../context/ThemeContext'
 import { UserContext } from '../../context/UserContext'
@@ -20,6 +20,7 @@ export default function TodayProgress() {
 
     const progressWidth = useSharedValue(0)
     const calorieCount = useSharedValue(0)
+    const hasPlayedIntroAnimation = useRef(false)
 
     const userId = useMemo(() => user?._id, [user?._id])
     const todayDate = moment().format('DD/MM/YYYY')
@@ -42,13 +43,18 @@ export default function TodayProgress() {
     )
 
     useEffect(() => {
+        // Longer easing on first paint; snappy updates when totals change (e.g. meal checkbox).
+        const barMs = hasPlayedIntroAnimation.current ? 340 : 720
+        const calorieMs = hasPlayedIntroAnimation.current ? 320 : 640
+        hasPlayedIntroAnimation.current = true
+
         progressWidth.value = withTiming(percentage, {
-            duration: 1200,
+            duration: barMs,
             easing: Easing.out(Easing.cubic),
         })
-        
+
         calorieCount.value = withTiming(totalCaloriesConsumed, {
-            duration: 1000,
+            duration: calorieMs,
             easing: Easing.out(Easing.ease),
         })
 
@@ -123,7 +129,7 @@ export default function TodayProgress() {
                         color: colors.TEXT,
                         letterSpacing: -0.5,
                         marginBottom: 4
-                    }}>Today's Goal</Text>
+                    }}>{'Today\'s Goal'}</Text>
                     <Text style={{
                         fontSize: 13,
                         color: colors.TEXT_SECONDARY,
@@ -194,20 +200,8 @@ export default function TodayProgress() {
                             width: '100%',
                             height: 18,
                             borderRadius: 12,
-                            justifyContent: 'center',
-                            alignItems: 'flex-end',
-                            paddingRight: 10
                         }}
-                    >
-                        {percentage > 15 && (
-                            <Text style={{
-                                fontSize: 11,
-                                fontWeight: '800',
-                                color: colors.WHITE,
-                                letterSpacing: 0.5
-                            }}>{percentage.toFixed(0)}%</Text>
-                        )}
-                    </LinearGradient>
+                    />
                 </Animated.View>
             </View>
 

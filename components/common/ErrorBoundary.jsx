@@ -47,7 +47,7 @@ class ErrorBoundaryClass extends React.Component {
                             Oops! Something went wrong
                         </Text>
                         <Text style={[styles.message, { color: colors.TEXT_SECONDARY }]}>
-                            We're sorry, but something unexpected happened. Please try again.
+                            {'We\'re sorry, but something unexpected happened. Please try again.'}
                         </Text>
                         {__DEV__ && this.state.error && (
                             <View style={[styles.errorContainer, {

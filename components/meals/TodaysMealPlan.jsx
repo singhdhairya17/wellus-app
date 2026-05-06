@@ -248,7 +248,7 @@ export default function TodaysMealPlan({ selectedDate, insideScrollView = false 
                     }}
                 >
                     <View style={{ flex: 1 }}>
-                        <Text style={[styles.title, { color: colors.TEXT }]}>Today's Meal Plan</Text>
+                        <Text style={[styles.title, { color: colors.TEXT }]}>{'Today\'s Meal Plan'}</Text>
                         <Text style={{
                             fontSize: 13,
                             color: colors.TEXT_SECONDARY,

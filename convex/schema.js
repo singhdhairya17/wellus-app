@@ -8,11 +8,16 @@ export default defineSchema({
         picture: v.optional(v.string()),
         subscriptionId: v.optional(v.string()),
         credits: v.number(),
+        // Body / nutrition fields kept here only for backward compat with old documents.
+        // The active profile in the `profiles` table is the source of truth.
         height: v.optional(v.string()),
+        heightCm: v.optional(v.number()),
         weight: v.optional(v.string()),
-        goalWeight: v.optional(v.number()), // Goal weight in kg
+        goalWeight: v.optional(v.number()),
         gender: v.optional(v.string()),
         goal: v.optional(v.string()),
+        age: v.optional(v.number()),
+        activityLevel: v.optional(v.string()),
         calories: v.optional(v.number()),
         proteins: v.optional(v.number()),
         carbohydrates: v.optional(v.number()),
@@ -49,7 +54,9 @@ export default defineSchema({
         sugar: v.number(),
         servingSize: v.optional(v.string()),
         servingsPerContainer: v.optional(v.number()),
-        imageUri: v.optional(v.string())
+        imageUri: v.optional(v.string()),
+        /** Uncheck on meal plan → exclude from daily totals & adaptive eating events */
+        includeInDailyTotal: v.optional(v.boolean()),
     }),
 
     // Adaptive Monitoring: Event logging for pattern detection
@@ -82,15 +89,23 @@ export default defineSchema({
         expiresAt: v.optional(v.number()) // For subscriptions
     }),
 
-    // Profiles: Multiple profiles per user account
+    // Profiles: Multiple profiles per user account.
+    // Source of truth for body metrics and computed nutrition goals.
     profiles: defineTable({
         userId: v.id('users'), // Links to the user account
         name: v.string(), // Profile name (e.g., "John", "Mom", "Dad")
         picture: v.optional(v.string()),
+        // Legacy "X.YY" feet+inches string kept for back-compat / display only.
         height: v.optional(v.string()),
+        // Canonical numeric height in centimeters used by all calculations.
+        heightCm: v.optional(v.number()),
         weight: v.optional(v.string()),
+        goalWeight: v.optional(v.number()),
         gender: v.optional(v.string()),
         goal: v.optional(v.string()),
+        age: v.optional(v.number()),
+        // Stored as a label: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active'.
+        activityLevel: v.optional(v.string()),
         calories: v.optional(v.number()),
         proteins: v.optional(v.number()),
         carbohydrates: v.optional(v.number()),

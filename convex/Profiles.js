@@ -45,9 +45,13 @@ export const CreateProfile = mutation({
         name: v.string(),
         picture: v.optional(v.string()),
         height: v.optional(v.string()),
+        heightCm: v.optional(v.number()),
         weight: v.optional(v.string()),
+        goalWeight: v.optional(v.number()),
         gender: v.optional(v.string()),
         goal: v.optional(v.string()),
+        age: v.optional(v.number()),
+        activityLevel: v.optional(v.string()),
         calories: v.optional(v.number()),
         proteins: v.optional(v.number()),
         carbohydrates: v.optional(v.number()),
@@ -101,6 +105,15 @@ export const CreateProfile = mutation({
         if (args.fat !== undefined) validateNumber(args.fat, 0, 1000, 'fat');
         if (args.sodium !== undefined) validateNumber(args.sodium, 0, 50000, 'sodium');
         if (args.sugar !== undefined) validateNumber(args.sugar, 0, 1000, 'sugar');
+        if (args.heightCm !== undefined) validateNumber(args.heightCm, 30, 272, 'heightCm');
+        if (args.goalWeight !== undefined) validateNumber(args.goalWeight, 1, 500, 'goalWeight');
+        if (args.age !== undefined) validateNumber(args.age, 1, 120, 'age');
+        if (args.activityLevel !== undefined) {
+            const allowed = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+            if (typeof args.activityLevel !== 'string' || !allowed.includes(args.activityLevel)) {
+                throw new Error(`Invalid activityLevel. Must be one of: ${allowed.join(', ')}`);
+            }
+        }
 
         // If this is the first profile or explicitly set as active, make it active
         const existingProfiles = await ctx.db
@@ -123,9 +136,13 @@ export const CreateProfile = mutation({
             name: sanitizeString(args.name, 30),
             picture: args.picture ? sanitizeString(args.picture, 10 * 1024 * 1024) : undefined,
             height: args.height ? sanitizeString(args.height, 20) : undefined,
+            heightCm: args.heightCm,
             weight: args.weight ? sanitizeString(args.weight, 20) : undefined,
+            goalWeight: args.goalWeight,
             gender: args.gender ? sanitizeString(args.gender, 20) : undefined,
             goal: args.goal ? sanitizeString(args.goal, 50) : undefined,
+            age: args.age,
+            activityLevel: args.activityLevel,
             calories: args.calories,
             proteins: args.proteins,
             carbohydrates: args.carbohydrates,
@@ -147,9 +164,13 @@ export const UpdateProfile = mutation({
         name: v.optional(v.string()),
         picture: v.optional(v.string()),
         height: v.optional(v.string()),
+        heightCm: v.optional(v.number()),
         weight: v.optional(v.string()),
+        goalWeight: v.optional(v.number()),
         gender: v.optional(v.string()),
         goal: v.optional(v.string()),
+        age: v.optional(v.number()),
+        activityLevel: v.optional(v.string()),
         calories: v.optional(v.number()),
         proteins: v.optional(v.number()),
         carbohydrates: v.optional(v.number()),
@@ -212,6 +233,26 @@ export const UpdateProfile = mutation({
         if (updates.weight !== undefined) cleanUpdates.weight = sanitizeString(updates.weight, 20);
         if (updates.gender !== undefined) cleanUpdates.gender = sanitizeString(updates.gender, 20);
         if (updates.goal !== undefined) cleanUpdates.goal = sanitizeString(updates.goal, 50);
+
+        if (updates.heightCm !== undefined) {
+            validateNumber(updates.heightCm, 30, 272, 'heightCm');
+            cleanUpdates.heightCm = updates.heightCm;
+        }
+        if (updates.goalWeight !== undefined) {
+            validateNumber(updates.goalWeight, 1, 500, 'goalWeight');
+            cleanUpdates.goalWeight = updates.goalWeight;
+        }
+        if (updates.age !== undefined) {
+            validateNumber(updates.age, 1, 120, 'age');
+            cleanUpdates.age = updates.age;
+        }
+        if (updates.activityLevel !== undefined) {
+            const allowed = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+            if (typeof updates.activityLevel !== 'string' || !allowed.includes(updates.activityLevel)) {
+                throw new Error(`Invalid activityLevel. Must be one of: ${allowed.join(', ')}`);
+            }
+            cleanUpdates.activityLevel = updates.activityLevel;
+        }
 
         // Validate numeric inputs
         if (updates.calories !== undefined) {

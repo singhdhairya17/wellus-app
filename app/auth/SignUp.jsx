@@ -10,7 +10,12 @@ import { api } from '../../convex/_generated/api'
 import { UserContext } from '../../context/UserContext'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import Onboarding from '../../components/common/Onboarding'
-import { validateEmail, validateName, validatePassword } from '../../utils/validation'
+import {
+    validateEmail,
+    validateName,
+    validatePassword,
+    emailDisplayForRememberMe,
+} from '../../utils/validation'
 import { sanitizeError } from '../../utils/security'
 import { useTheme } from '../../context/ThemeContext'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -84,6 +89,17 @@ export default function SignUp() {
                         console.log('[SignUp] ✅ Cleared onboarding for new user');
                     } catch (error) {
                         console.error('[SignUp] Error clearing onboarding:', error);
+                    }
+
+                    // Match Sign-In "Remember me": cold start won't sign them out (index.jsx)
+                    try {
+                        await AsyncStorage.setItem('rememberMe', 'true');
+                        await AsyncStorage.setItem(
+                            'rememberedEmail',
+                            emailDisplayForRememberMe(email),
+                        );
+                    } catch (e) {
+                        console.error('[SignUp] Remember-me storage:', e);
                     }
                     
                     // Show onboarding immediately after account creation

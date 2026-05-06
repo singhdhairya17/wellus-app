@@ -76,11 +76,14 @@ export const ToggleFavoriteRecipe = mutation({
         recipeId: v.id('recipes')
     },
     handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity()
-        if (!identity) {
-            throw new Error("Unauthorized")
+        const recipe = await ctx.db.get(args.recipeId)
+        if (!recipe) {
+            throw new Error('Recipe not found')
         }
-        
+        if (recipe.uid !== args.uid) {
+            throw new Error('You can only favorite your own recipes')
+        }
+
         // Check if already favorited
         const existing = await ctx.db
             .query('favoriteRecipes')
@@ -114,11 +117,6 @@ export const GetFavoriteRecipes = query({
         uid: v.id('users')
     },
     handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity()
-        if (!identity) {
-            return []
-        }
-        
         const favorites = await ctx.db
             .query('favoriteRecipes')
             .withIndex('by_user', q => q.eq('uid', args.uid))
@@ -139,11 +137,6 @@ export const IsRecipeFavorite = query({
         recipeId: v.id('recipes')
     },
     handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity()
-        if (!identity) {
-            return false
-        }
-        
         const favorite = await ctx.db
             .query('favoriteRecipes')
             .withIndex('by_user')

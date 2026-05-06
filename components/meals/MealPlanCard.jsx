@@ -28,7 +28,10 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function MealPlanCard({ mealPlanInfo, index = 0 }) {
     const { colors } = useTheme()
-    const updateStatus = useMutation(api.MealPlan.updateStatus);
+    const updateStatus = useMutation(api.MealPlan.updateStatus)
+    const setScannedFoodIncludeInDailyTotal = useMutation(
+        api.MealPlan.setScannedFoodIncludeInDailyTotal
+    )
     const { setRefreshData } = useContext(RefreshDataContext)
     const checkScale = useSharedValue(1)
     const cardScale = useSharedValue(1)
@@ -36,8 +39,10 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
     const [isExpanded, setIsExpanded] = useState(false)
     const [showDetailModal, setShowDetailModal] = useState(false)
     const expandHeight = useSharedValue(0)
-    const isCompleted = mealPlanInfo?.mealPlan?.status === true;
-    const isScannedFood = mealPlanInfo?.mealPlan?.isScannedFood === true;
+    const isScannedFood = mealPlanInfo?.mealPlan?.isScannedFood === true
+    const isCounted = isScannedFood
+        ? mealPlanInfo?.mealPlan?.includeInDailyTotal !== false
+        : mealPlanInfo?.mealPlan?.status !== false
     const recipe = mealPlanInfo?.recipe;
     const jsonData = recipe?.jsonData || {};
     
@@ -102,34 +107,43 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
         }
     }, [imageUri])
 
-    const onCheck = async (status) => {
-        if (mealPlanInfo?.mealPlan?.isScannedFood || !mealPlanInfo?.mealPlan?.recipeId) {
-            Alert.alert('Info', 'Scanned food items are always marked as consumed and cannot be changed.');
-            return;
-        }
+    const onCheck = async (nextIncluded) => {
+        const mp = mealPlanInfo?.mealPlan
+        if (!mp?._id) return
 
         triggerHaptic.medium()
         try {
-            await updateStatus({
-                id: mealPlanInfo?.mealPlan?._id,
-                status: status,
-                calories: mealPlanInfo?.recipe?.jsonData?.calories
-            });
+            if (isScannedFood) {
+                await setScannedFoodIncludeInDailyTotal({
+                    id: mp._id,
+                    includeInDailyTotal: nextIncluded,
+                })
+            } else if (mp.recipeId) {
+                await updateStatus({
+                    id: mp._id,
+                    status: nextIncluded,
+                    calories:
+                        mealPlanInfo?.recipe?.jsonData?.calories ??
+                        mp.calories ??
+                        0,
+                })
+            } else {
+                return
+            }
 
             checkScale.value = withSequence(
                 withSpring(1.2, { damping: 8 }),
                 withSpring(1, { damping: 8 })
             )
 
-            if (status) {
+            if (nextIncluded) {
                 triggerHaptic.success()
             }
 
-            Alert.alert('Great!', 'Status Updated!');
-            setRefreshData(Date.now());
+            setRefreshData(Date.now())
         } catch (error) {
-            console.error('Update status error:', error);
-            Alert.alert('Error', 'Failed to update status. Please try again.');
+            console.error('Update meal counted state:', error)
+            Alert.alert('Error', 'Could not update this meal. Please try again.')
         }
     }
 
@@ -195,7 +209,7 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
                 onPress={handleCardPress}
             >
                 <LinearGradient
-                    colors={isCompleted 
+                    colors={isCounted 
                         ? colors.isDark 
                             ? [colors.GREEN + '25', colors.SURFACE, colors.GREEN + '15']
                             : ['#E8F5E9', '#FFFFFF', '#F1F8F4']
@@ -210,11 +224,11 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
                         flexDirection: 'row',
                         gap: 14,
                         borderRadius: 18,
-                        borderWidth: isCompleted ? 2 : 1.5,
-                        borderColor: isCompleted ? colors.GREEN + '50' : colors.BORDER + '50',
-                        elevation: isCompleted ? 4 : 3,
-                        shadowColor: isCompleted ? colors.GREEN : colors.PRIMARY,
-                        shadowOpacity: isCompleted ? 0.25 : 0.12,
+                        borderWidth: isCounted ? 2 : 1.5,
+                        borderColor: isCounted ? colors.GREEN + '50' : colors.BORDER + '50',
+                        elevation: isCounted ? 4 : 3,
+                        shadowColor: isCounted ? colors.GREEN : colors.PRIMARY,
+                        shadowOpacity: isCounted ? 0.25 : 0.12,
                         shadowOffset: { width: 0, height: 4 },
                         shadowRadius: 10,
                     }}
@@ -337,7 +351,7 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
                                         {jsonData?.calories || mealPlanInfo?.mealPlan?.calories || 0} kcal
                                     </Text>
                                 </LinearGradient>
-                                {isCompleted && (
+                                {isCounted && (
                                     <View style={{
                                         width: 20,
                                         height: 20,
@@ -357,34 +371,38 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
                     <AnimatedPressable
                         onPress={(e) => {
                             e.stopPropagation()
-                            onCheck(!isCompleted)
+                            onCheck(!isCounted)
                         }}
-                        disabled={isScannedFood || !mealPlanInfo?.mealPlan?.recipeId}
+                        disabled={!mealPlanInfo?.mealPlan?._id || (!isScannedFood && !mealPlanInfo?.mealPlan?.recipeId)}
                         style={[
                             {
                                 width: 44,
                                 height: 44,
                                 borderRadius: 22,
-                                backgroundColor: isCompleted ? colors.GREEN + '25' : colors.BORDER + '30',
+                                backgroundColor: isCounted ? colors.GREEN + '25' : colors.BORDER + '30',
                                 justifyContent: 'center',
                                 alignItems: 'center',
                                 borderWidth: 2,
-                                borderColor: isCompleted ? colors.GREEN + '60' : colors.BORDER + '60',
-                                opacity: (isScannedFood || !mealPlanInfo?.mealPlan?.recipeId) ? 0.4 : 1,
-                                shadowColor: isCompleted ? colors.GREEN : '#000',
+                                borderColor: isCounted ? colors.GREEN + '60' : colors.BORDER + '60',
+                                opacity:
+                                    !mealPlanInfo?.mealPlan?._id ||
+                                    (!isScannedFood && !mealPlanInfo?.mealPlan?.recipeId)
+                                        ? 0.4
+                                        : 1,
+                                shadowColor: isCounted ? colors.GREEN : '#000',
                                 shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: isCompleted ? 0.2 : 0.05,
+                                shadowOpacity: isCounted ? 0.2 : 0.05,
                                 shadowRadius: 4,
-                                elevation: isCompleted ? 2 : 1
+                                elevation: isCounted ? 2 : 1
                             },
                             checkAnimatedStyle
                         ]}
                     >
                         <HugeiconsIcon 
-                            icon={isCompleted ? CheckmarkSquare02Icon : SquareIcon} 
-                            color={isCompleted ? colors.GREEN : colors.TEXT_SECONDARY}
+                            icon={isCounted ? CheckmarkSquare02Icon : SquareIcon} 
+                            color={isCounted ? colors.GREEN : colors.TEXT_SECONDARY}
                             size={22}
-                            strokeWidth={isCompleted ? 2.5 : 2}
+                            strokeWidth={isCounted ? 2.5 : 2}
                         />
                     </AnimatedPressable>
                 </LinearGradient>
@@ -518,6 +536,8 @@ function MealPlanCard({ mealPlanInfo, index = 0 }) {
 export default React.memo(MealPlanCard, (prevProps, nextProps) => {
     return prevProps.mealPlanInfo?.mealPlan?._id === nextProps.mealPlanInfo?.mealPlan?._id &&
            prevProps.mealPlanInfo?.mealPlan?.status === nextProps.mealPlanInfo?.mealPlan?.status &&
+           prevProps.mealPlanInfo?.mealPlan?.includeInDailyTotal ===
+               nextProps.mealPlanInfo?.mealPlan?.includeInDailyTotal &&
            prevProps.index === nextProps.index
 })
 

@@ -117,7 +117,7 @@ export default function MealRemindersPage() {
                 if (mealType === 'Water') {
                     Alert.alert(
                         'Water Reminders Enabled',
-                        "You'll get a daily reminder around 10:00 AM to log water in Wellus (sound + banner)."
+                        `You'll get a daily reminder at ${formatTime(reminderHour, reminderMinute)} to log water in Wellus (sound + banner).`
                     )
                 }
             } else {
@@ -296,7 +296,7 @@ export default function MealRemindersPage() {
                                             <View style={styles.timeRow}>
                                                 <HugeiconsIcon icon={Clock01FreeIcons} size={16} color={colors.TEXT_SECONDARY} />
                                                 <Text style={[styles.reminderTime, { color: colors.TEXT_SECONDARY, marginLeft: 6, fontWeight: '600' }]}>
-                                                    Smart reminders based on your water intake
+                                                    Daily reminder at {formatTime(reminder?.hour ?? meal.defaultHour, reminder?.minute ?? meal.defaultMinute)}
                                                 </Text>
                                             </View>
                                         ) : (

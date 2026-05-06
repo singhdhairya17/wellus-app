@@ -3,8 +3,7 @@ import React from 'react'
 import Colors from '../../constants/colors';
 
 export default function RecipeIngredients({ recipeDetail }) {
-    const ingrdients = (recipeDetail?.jsonData)?.ingredients;
-    console.log(ingrdients)
+    const ingredients = recipeDetail?.jsonData?.ingredients;
     return (
         <View style={{
             marginTop: 15
@@ -17,15 +16,15 @@ export default function RecipeIngredients({ recipeDetail }) {
                 <Text style={{
                     fontSize: 20,
                     fontWeight: 'bold'
-                }}>Ingredinets  </Text>
+                }}>Ingredients</Text>
                 <Text style={{
                     fontSize: 20,
 
-                }}>{ingrdients?.length} Items </Text>
+                }}>{ingredients?.length} Items </Text>
             </View>
 
             <FlatList
-                data={ingrdients}
+                data={ingredients}
                 renderItem={({ item, index }) => (
                     <View style={{
                         marginTop: 10,

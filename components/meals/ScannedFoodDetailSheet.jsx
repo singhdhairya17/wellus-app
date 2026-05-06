@@ -60,7 +60,27 @@ export default function ScannedFoodDetailSheet({ scannedFood, hideActionSheet })
         }
     }, [scannedFood])
 
-    // Early return if scannedFood is invalid
+    useEffect(() => {
+        if (scannedFood) {
+            const currentNutritionData = scannedFood?.recipe?.jsonData || {
+                calories: scannedFood?.mealPlan?.calories || scannedFood?.recipe?.jsonData?.calories || 0,
+                proteins: scannedFood?.recipe?.jsonData?.proteins || scannedFood?.mealPlan?.protein || 0,
+                carbohydrates: scannedFood?.recipe?.jsonData?.carbohydrates || scannedFood?.mealPlan?.carbohydrates || 0,
+                fat: scannedFood?.recipe?.jsonData?.fat || scannedFood?.mealPlan?.fat || 0,
+                sodium: scannedFood?.recipe?.jsonData?.sodium || scannedFood?.mealPlan?.sodium || 0,
+                sugar: scannedFood?.recipe?.jsonData?.sugar || scannedFood?.mealPlan?.sugar || 0
+            }
+            
+            setFoodName(scannedFood.recipe?.recipeName || scannedFood.mealPlan?.foodName || '')
+            setCalories(String(currentNutritionData?.calories || 0))
+            setProtein(String(currentNutritionData?.proteins || currentNutritionData?.protein || 0))
+            setCarbohydrates(String(currentNutritionData?.carbohydrates || 0))
+            setFat(String(currentNutritionData?.fat || 0))
+            setSodium(String(currentNutritionData?.sodium || 0))
+            setSugar(String(currentNutritionData?.sugar || 0))
+        }
+    }, [scannedFood])
+
     if (!scannedFood || typeof scannedFood !== 'object') {
         return (
             <View style={{ padding: 20, alignItems: 'center' }}>
@@ -88,28 +108,6 @@ export default function ScannedFoodDetailSheet({ scannedFood, hideActionSheet })
         sodium: 0,
         sugar: 0
     }
-    
-    // Initialize form fields when scannedFood changes
-    useEffect(() => {
-        if (scannedFood) {
-            const currentNutritionData = scannedFood?.recipe?.jsonData || {
-                calories: scannedFood?.mealPlan?.calories || scannedFood?.recipe?.jsonData?.calories || 0,
-                proteins: scannedFood?.recipe?.jsonData?.proteins || scannedFood?.mealPlan?.protein || 0,
-                carbohydrates: scannedFood?.recipe?.jsonData?.carbohydrates || scannedFood?.mealPlan?.carbohydrates || 0,
-                fat: scannedFood?.recipe?.jsonData?.fat || scannedFood?.mealPlan?.fat || 0,
-                sodium: scannedFood?.recipe?.jsonData?.sodium || scannedFood?.mealPlan?.sodium || 0,
-                sugar: scannedFood?.recipe?.jsonData?.sugar || scannedFood?.mealPlan?.sugar || 0
-            }
-            
-            setFoodName(scannedFood.recipe?.recipeName || scannedFood.mealPlan?.foodName || '')
-            setCalories(String(currentNutritionData?.calories || 0))
-            setProtein(String(currentNutritionData?.proteins || currentNutritionData?.protein || 0))
-            setCarbohydrates(String(currentNutritionData?.carbohydrates || 0))
-            setFat(String(currentNutritionData?.fat || 0))
-            setSodium(String(currentNutritionData?.sodium || 0))
-            setSugar(String(currentNutritionData?.sugar || 0))
-        }
-    }, [scannedFood])
 
     // Format timestamps
     const loggedTime = scannedFood?.mealPlan?._creationTime 

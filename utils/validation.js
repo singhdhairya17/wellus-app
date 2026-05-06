@@ -52,6 +52,15 @@ export const validateEmail = (email) => {
 };
 
 /**
+ * Trim/sanitize email for Remember Me prefilled field only.
+ * Preserves casing the user typed; keep using validateEmail(...).value for sign-in and APIs.
+ */
+export const emailDisplayForRememberMe = (email) => {
+    if (!email || typeof email !== 'string') return '';
+    return sanitizeString(email, 254);
+};
+
+/**
  * Validate and sanitize name
  */
 export const validateName = (name) => {
@@ -145,6 +154,49 @@ export const validateHeight = (height) => {
     }
     
     return { valid: true, value: sanitized };
+};
+
+/** Validate the feet portion of a height entered as two separate inputs. */
+export const validateFeet = (feet) => {
+    const result = validateNumeric(feet, 1, 8, 'Feet');
+    if (!result.valid) return result;
+    if (!Number.isInteger(result.value)) {
+        return { valid: false, error: 'Feet must be a whole number' };
+    }
+    return result;
+};
+
+/** Validate the inches portion (0-11) of a height entered as two separate inputs. */
+export const validateInches = (inches) => {
+    const result = validateNumeric(inches ?? 0, 0, 11, 'Inches');
+    if (!result.valid) return result;
+    if (!Number.isInteger(result.value)) {
+        return { valid: false, error: 'Inches must be a whole number' };
+    }
+    return result;
+};
+
+/** Validate age in years (1-120). */
+export const validateAge = (age) => {
+    const result = validateNumeric(age, 1, 120, 'Age');
+    if (!result.valid) return result;
+    if (!Number.isInteger(result.value)) {
+        return { valid: false, error: 'Age must be a whole number' };
+    }
+    return result;
+};
+
+/** Validate that a string is one of the allowed activity-level keys. */
+export const validateActivityLevel = (level) => {
+    const allowed = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+    if (!level || typeof level !== 'string') {
+        return { valid: false, error: 'Activity level is required' };
+    }
+    const normalized = level.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!allowed.includes(normalized)) {
+        return { valid: false, error: `Activity level must be one of: ${allowed.join(', ')}` };
+    }
+    return { valid: true, value: normalized };
 };
 
 /**

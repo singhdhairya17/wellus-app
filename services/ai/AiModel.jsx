@@ -35,22 +35,9 @@ const retryWithBackoff = async (fn, maxRetries = 3, initialDelay = 2000) => {
     }
 }
 
-export const CalculateCaloriesAI = async (PROMPT) => {
-    try {
-        const convex = getConvexClient()
-        if (!convex) {
-            throw new Error('RATE_LIMIT_FALLBACK: Missing EXPO_PUBLIC_CONVEX_URL. Use manual calculation.')
-        }
-        return await convex.action(api.Ai.CalculateCaloriesAI, { prompt: PROMPT })
-    } catch (error) {
-        // Check if it's a rate limit error
-        if (isRateLimitError(error)) {
-            throw new Error('RATE_LIMIT_FALLBACK: API rate limit exceeded. Use manual calculation.')
-        }
-        // Re-throw other errors
-        throw error
-    }
-}
+// CalculateCaloriesAI was removed: it had a height-parsing bug that overwrote
+// correct manual calorie targets with a value near 425 kcal. All nutrition
+// goal calculations now go through CalculateNutritionGoalsManually.
 
 export const GenerateAIRecipe = async (PROMPT) => {
     // Retry with exponential backoff for rate limits
@@ -72,18 +59,68 @@ export const GenerateAIRecipe = async (PROMPT) => {
     }, 3, 2000) // 3 retries, starting with 2 second delay
 }
 
-const BASE_URL = 'https://aigurulab.tech';
-export const GenerateRecipeImage = async (prompt) => await axios.post(BASE_URL + '/api/generate-image',
-    {
-        width: 1024,
-        height: 1024,
-        input: prompt,
-        model: 'sdxl',
-        aspectRatio: "1:1"
-    },
-    {
-        headers: {
-            'x-api-key': process.env.EXPO_PUBLIC_AIRGURU_LAB_API_KEY,
-            'Content-Type': 'application/json',
-        },
-    })
+/**
+ * Vision estimate for non-label meals (plate / home-cooked). Uses Convex with purpose meal_photo.
+ * @param {{ base64Image: string, mimeType?: string, userHint?: string, uid?: string }} args
+ */
+export const estimateMealFromPhoto = async (args) => {
+    return await retryWithBackoff(async () => {
+        const convex = getConvexClient()
+        if (!convex) {
+            throw new Error('Missing EXPO_PUBLIC_CONVEX_URL. Meal photo estimation unavailable.')
+        }
+        return await convex.action(api.Ai.ExtractNutritionFromImageAI, {
+            uid: args.uid,
+            base64Image: args.base64Image,
+            mimeType: args.mimeType,
+            purpose: 'meal_photo',
+            userHint: args.userHint,
+        })
+    }, 3, 2000)
+}
+
+/** Teal placeholder when external image API (AiGuru / aigurulab) fails or key is missing */
+export const FALLBACK_RECIPE_CARD_IMAGE_URL =
+    'https://placehold.co/1024x1024/14B8A6/FFFFFF/png?text=WELLUS+Recipe'
+
+const BASE_URL = 'https://aigurulab.tech'
+export const GenerateRecipeImage = async (prompt) => {
+    const key = process.env.EXPO_PUBLIC_AIRGURU_LAB_API_KEY
+    if (!key || !String(key).trim()) {
+        const err = new Error('IMAGE_GEN_SKIPPED: Missing EXPO_PUBLIC_AIRGURU_LAB_API_KEY')
+        err.code = 'SKIP_IMAGE'
+        throw err
+    }
+    const safePrompt = typeof prompt === 'string' && prompt.trim() ? prompt : 'Healthy plated meal, food photography'
+    try {
+        return await axios.post(
+            `${BASE_URL}/api/generate-image`,
+            {
+                width: 1024,
+                height: 1024,
+                input: safePrompt.slice(0, 2000),
+                model: 'sdxl',
+                aspectRatio: '1:1',
+            },
+            {
+                headers: {
+                    'x-api-key': key.trim(),
+                    'Content-Type': 'application/json',
+                },
+                timeout: 120000,
+            }
+        )
+    } catch (e) {
+        const status = e?.response?.status
+        const raw = e?.response?.data
+        let snippet = ''
+        if (typeof raw === 'string') snippet = raw.slice(0, 200)
+        else if (raw && typeof raw === 'object') {
+            snippet = raw.message || raw.error || JSON.stringify(raw).slice(0, 200)
+        }
+        const msg = new Error(`Image API failed${status ? ` (${status})` : ''}${snippet ? `: ${snippet}` : ''}`)
+        msg.status = status
+        msg.cause = e
+        throw msg
+    }
+}

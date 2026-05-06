@@ -8,10 +8,55 @@ const num = (v) => {
 }
 
 /**
- * Planned meals count for daily totals unless the user explicitly skipped them (status === false).
- * New rows from CreateMealPlan have status undefined until the user toggles the checkbox.
+ * Planned recipe meals count unless status === false. Legacy docs with no status still count (undefined treated as logged).
+ * New inserts use status: false until the user ticks the checkbox.
  */
 const mealPlansForIntake = (rows) => rows.filter((mp) => mp.status !== false)
+
+const scannedFoodsForIntake = (foods) =>
+    foods.filter((f) => f.includeInDailyTotal !== false)
+
+async function deleteMatchingRecipeEatingEvents(ctx, mealPlan) {
+    const recipe = await ctx.db.get(mealPlan.recipeId)
+    const events = await ctx.db
+        .query('eatingEvents')
+        .filter((q) =>
+            q.and(
+                q.eq(q.field('uid'), mealPlan.uid),
+                q.eq(q.field('date'), mealPlan.date),
+                q.eq(q.field('mealType'), mealPlan.mealType),
+                q.eq(q.field('source'), 'recipe')
+            )
+        )
+        .collect()
+    const target = num(recipe?.jsonData?.calories ?? mealPlan.calories ?? 0)
+    for (const e of events) {
+        if (Math.abs(num(e.calories) - target) <= Math.max(30, target * 0.2)) {
+            await ctx.db.delete(e._id)
+        }
+    }
+}
+
+async function deleteMatchingScannedEatingEvents(ctx, food) {
+    const events = await ctx.db
+        .query('eatingEvents')
+        .filter((q) =>
+            q.and(
+                q.eq(q.field('uid'), food.uid),
+                q.eq(q.field('date'), food.date),
+                q.eq(q.field('mealType'), food.mealType),
+                q.eq(q.field('source'), 'scanned')
+            )
+        )
+        .collect()
+    const target = num(food.calories)
+    for (const e of events) {
+        if (Math.abs(num(e.calories) - target) < 15) {
+            await ctx.db.delete(e._id)
+            break
+        }
+    }
+}
 
 export const CreateMealPlan = mutation({
     args: {
@@ -25,9 +70,10 @@ export const CreateMealPlan = mutation({
             recipeId: args.recipeId,
             date: args.date,
             mealType: args.mealType,
-            uid: args.uid
-        });
-        return result;
+            uid: args.uid,
+            status: false,
+        })
+        return result
     }
 })
 
@@ -106,13 +152,13 @@ export const GetTodaysMealPlan = query({
                             _id: food._id,
                             date: food.date,
                             mealType: food.mealType,
-                            status: true, // Scanned foods are always consumed
                             calories: food.calories,
                             foodName: food.foodName,
-                            imageUri: food.imageUri || '', // Include imageUri in mealPlan
-                            isScannedFood: true, // Flag to identify scanned foods
-                            _creationTime: food._creationTime, // When logged
-                            finishedEatingTime: matchingEvent?.timestamp || null // When finished eating
+                            imageUri: food.imageUri || '',
+                            isScannedFood: true,
+                            includeInDailyTotal: food.includeInDailyTotal !== false,
+                            _creationTime: food._creationTime,
+                            finishedEatingTime: matchingEvent?.timestamp || null,
                         },
                         recipe: {
                             _id: food._id,
@@ -135,7 +181,7 @@ export const GetTodaysMealPlan = query({
             const filteredScannedFoodResults = scannedFoodResults.filter(Boolean);
 
             // Return scanned foods first so they render immediately, then regular meals
-            return [...scannedFoodResults, ...results];
+            return [...filteredScannedFoodResults, ...results];
         } catch (error) {
             console.error('Error in GetTodaysMealPlan:', error);
             // Return empty array on error to prevent .map() errors
@@ -189,16 +235,18 @@ export const GetMealPlanSummary = query({
                         meals: []
                     };
                 }
-                summary[mealPlan.date].totalMeals++;
-                if (mealPlan.status === true) {
-                    summary[mealPlan.date].eatenMeals++;
+                summary[mealPlan.date].totalMeals++
+                const recipeCounted =
+                    mealPlan.status === true || mealPlan.status === undefined
+                if (recipeCounted) {
+                    summary[mealPlan.date].eatenMeals++
                 } else {
-                    summary[mealPlan.date].skippedMeals++;
+                    summary[mealPlan.date].skippedMeals++
                 }
             }
         }
 
-        // Process scanned foods (always considered eaten)
+        // Scanned foods: respect includeInDailyTotal for summary
         for (const food of allScannedFoods) {
             const foodDate = parseDate(food.date);
             if (foodDate >= start && foodDate <= end) {
@@ -211,8 +259,13 @@ export const GetMealPlanSummary = query({
                         meals: []
                     };
                 }
-                summary[food.date].totalMeals++;
-                summary[food.date].eatenMeals++;
+                summary[food.date].totalMeals++
+                const counted = food.includeInDailyTotal !== false
+                if (counted) {
+                    summary[food.date].eatenMeals++
+                } else {
+                    summary[food.date].skippedMeals++
+                }
             }
         }
 
@@ -227,41 +280,41 @@ export const updateStatus = mutation({
         calories: v.number()
     },
     handler: async (ctx, args) => {
-        const mealPlan = await ctx.db.get(args.id);
-        if (!mealPlan) return;
+        const mealPlan = await ctx.db.get(args.id)
+        if (!mealPlan) return
+
+        await deleteMatchingRecipeEatingEvents(ctx, mealPlan)
 
         const result = await ctx.db.patch(args.id, {
             status: args.status,
-            calories: args.calories
-        });
+            calories: args.calories,
+        })
 
-        // Log eating event when meal is consumed (status = true)
         if (args.status && mealPlan) {
-            const recipe = await ctx.db.get(mealPlan.recipeId);
+            const recipe = await ctx.db.get(mealPlan.recipeId)
             if (recipe?.jsonData) {
-                const now = new Date();
-                const hour = now.getHours();
-                const date = mealPlan.date;
-                
+                const now = new Date()
+                const hour = now.getHours()
+                const jd = recipe.jsonData
                 await ctx.db.insert('eatingEvents', {
                     uid: mealPlan.uid,
-                    date: date,
+                    date: mealPlan.date,
                     timestamp: now.toISOString(),
                     mealType: mealPlan.mealType,
-                    hour: hour,
-                    calories: recipe.jsonData.calories || args.calories || 0,
-                    protein: recipe.jsonData.proteins || 0,
-                    carbohydrates: 0, // Recipes might not have all macros
-                    fat: 0,
-                    sodium: 0,
-                    sugar: 0,
-                    source: 'recipe'
-                });
+                    hour,
+                    calories: num(jd.calories ?? args.calories ?? 0),
+                    protein: num(jd.proteins ?? jd.protein ?? 0),
+                    carbohydrates: num(jd.carbohydrates ?? 0),
+                    fat: num(jd.fat ?? 0),
+                    sodium: num(jd.sodium ?? 0),
+                    sugar: num(jd.sugar ?? 0),
+                    source: 'recipe',
+                })
             }
         }
 
-        return result;
-    }
+        return result
+    },
 })
 
 
@@ -281,28 +334,29 @@ export const GetTotalCaloriesConsumed = query({
             .collect();
         const mealPlanResult = mealPlansForIntake(mealPlanRows);
 
-        const scannedFoodsResult = await ctx.db.query('scannedFoods')
-            .filter(q =>
-                q.and(
-                    q.eq(q.field('uid'), args.uid),
-                    q.eq(q.field('date'), args.date)
+        const scannedFoodsResult = scannedFoodsForIntake(
+            (await ctx.db.query('scannedFoods')
+                .filter((q) =>
+                    q.and(
+                        q.eq(q.field('uid'), args.uid),
+                        q.eq(q.field('date'), args.date)
+                    )
                 )
-            )
-            .collect();
+                .collect()) || []
+        )
 
-        let totalCaloriesFromMeals = 0;
+        let totalCaloriesFromMeals = 0
         for (const mealPlan of mealPlanResult) {
-            const recipe = await ctx.db.get(mealPlan.recipeId);
+            const recipe = await ctx.db.get(mealPlan.recipeId)
             totalCaloriesFromMeals += num(
                 recipe?.jsonData?.calories ?? mealPlan.calories
-            );
+            )
         }
 
-        const totalCaloriesFromScanned = scannedFoodsResult?.reduce((sum, food) => {
-            return sum + num(food.calories);
-        }, 0) || 0;
+        const totalCaloriesFromScanned =
+            scannedFoodsResult.reduce((sum, food) => sum + num(food.calories), 0) || 0
 
-        return totalCaloriesFromMeals + totalCaloriesFromScanned;
+        return totalCaloriesFromMeals + totalCaloriesFromScanned
     }
 })
 
@@ -321,10 +375,12 @@ export const SaveScannedFood = mutation({
         sugar: v.number(),
         servingSize: v.optional(v.string()),
         servingsPerContainer: v.optional(v.number()),
-        imageUri: v.optional(v.string())
+        imageUri: v.optional(v.string()),
+        includeInDailyTotal: v.optional(v.boolean()),
     },
     handler: async (ctx, args) => {
-        // Save the scanned food
+        const included = args.includeInDailyTotal !== false
+
         const result = await ctx.db.insert('scannedFoods', {
             uid: args.uid,
             date: args.date,
@@ -338,29 +394,70 @@ export const SaveScannedFood = mutation({
             sugar: args.sugar,
             servingSize: args.servingSize,
             servingsPerContainer: args.servingsPerContainer,
-            imageUri: args.imageUri
-        });
+            imageUri: args.imageUri,
+            ...(included ? {} : { includeInDailyTotal: false }),
+        })
 
-        // Log eating event for adaptive monitoring
-        const now = new Date();
-        const hour = now.getHours();
-        await ctx.db.insert('eatingEvents', {
-            uid: args.uid,
-            date: args.date,
-            timestamp: now.toISOString(),
-            mealType: args.mealType,
-            hour: hour,
-            calories: args.calories,
-            protein: args.protein,
-            carbohydrates: args.carbohydrates,
-            fat: args.fat,
-            sodium: args.sodium,
-            sugar: args.sugar,
-            source: 'scanned'
-        });
+        if (included) {
+            const now = new Date()
+            const hour = now.getHours()
+            await ctx.db.insert('eatingEvents', {
+                uid: args.uid,
+                date: args.date,
+                timestamp: now.toISOString(),
+                mealType: args.mealType,
+                hour,
+                calories: args.calories,
+                protein: args.protein,
+                carbohydrates: args.carbohydrates,
+                fat: args.fat,
+                sodium: args.sodium,
+                sugar: args.sugar,
+                source: 'scanned',
+            })
+        }
 
-        return result;
-    }
+        return result
+    },
+})
+
+export const setScannedFoodIncludeInDailyTotal = mutation({
+    args: {
+        id: v.id('scannedFoods'),
+        includeInDailyTotal: v.boolean(),
+    },
+    handler: async (ctx, args) => {
+        const food = await ctx.db.get(args.id)
+        if (!food) {
+            throw new Error('Scanned food not found')
+        }
+
+        await deleteMatchingScannedEatingEvents(ctx, food)
+        await ctx.db.patch(args.id, {
+            includeInDailyTotal: args.includeInDailyTotal,
+        })
+
+        if (args.includeInDailyTotal) {
+            const now = new Date()
+            const hour = now.getHours()
+            await ctx.db.insert('eatingEvents', {
+                uid: food.uid,
+                date: food.date,
+                timestamp: now.toISOString(),
+                mealType: food.mealType,
+                hour,
+                calories: food.calories,
+                protein: food.protein,
+                carbohydrates: food.carbohydrates,
+                fat: food.fat,
+                sodium: food.sodium,
+                sugar: food.sugar,
+                source: 'scanned',
+            })
+        }
+
+        return args.id
+    },
 })
 
 // Update scanned food item
@@ -460,16 +557,18 @@ export const GetDailyMacronutrients = query({
             .collect();
         const mealPlans = mealPlansForIntake(mealPlanRows);
 
-        const scannedFoods = await ctx.db.query('scannedFoods')
-            .filter(q =>
-                q.and(
-                    q.eq(q.field('uid'), args.uid),
-                    q.eq(q.field('date'), args.date)
+        const scannedFoods = scannedFoodsForIntake(
+            (await ctx.db.query('scannedFoods')
+                .filter((q) =>
+                    q.and(
+                        q.eq(q.field('uid'), args.uid),
+                        q.eq(q.field('date'), args.date)
+                    )
                 )
-            )
-            .collect();
+                .collect()) || []
+        )
 
-        let totalCalories = 0;
+        let totalCalories = 0
         let totalProtein = 0;
         let totalCarbs = 0;
         let totalFat = 0;

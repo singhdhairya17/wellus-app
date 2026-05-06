@@ -23,15 +23,15 @@ function HomeHeader() {
     const [showPicturePicker, setShowPicturePicker] = useState(false)
     const UpdateUserPicture = useMutation(api.Users.UpdateUserPicture)
     const imageScale = useSharedValue(1)
-    
-    // Safety check - don't render if theme context is unavailable
-    if (!themeContext || !colors) {
-        return null
-    }
 
     const imageAnimatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: imageScale.value }],
     }))
+
+    // Hooks must run before any return (theme guard below).
+    if (!themeContext || !colors) {
+        return null
+    }
 
     const handleImagePressIn = () => {
         imageScale.value = withSpring(0.95, { damping: 15, stiffness: 300 })

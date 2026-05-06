@@ -8,18 +8,49 @@ import { UserContext } from '../../context/UserContext'
 import { useTheme } from '../../context/ThemeContext'
 import { HugeiconsIcon } from '@hugeicons/react-native'
 import { useRouter } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { auth } from './../../services/FirebaseConfig'
 import { signOut } from 'firebase/auth'
-import { useMutation } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import Input from '../../components/common/shared/Input'
 import Button from '../../components/common/shared/Button'
 import { Dumbbell01Icon, FemaleSymbolFreeIcons, MaleSymbolIcon, PlusSignSquareIcon, WeightScaleIcon } from '@hugeicons/core-free-icons'
-import { CalculateCaloriesAI } from '../../services/ai/AiModel'
 import { CalculateNutritionGoalsManually } from '../../services/calculation/ManualCalculationService'
 import { LinearGradient } from 'expo-linear-gradient'
 import ProfileManager from '../../components/profile/ProfileManager'
 import ProfilePicturePicker from '../../components/common/ProfilePicturePicker'
+import {
+    validateWeight,
+    validateFeet,
+    validateInches,
+    validateAge,
+    validateGender,
+    validateGoal,
+    validateActivityLevel,
+} from '../../utils/validation'
+import { showError, showSuccess } from '../../utils/showAlert'
+import {
+    feetInchesToCm,
+    cmToFeetInches,
+    legacyHeightToCm,
+    ACTIVITY_LEVELS,
+} from '../../utils/measurements'
+
+const ACTIVITY_LABELS = {
+    sedentary: 'Sedentary',
+    light: 'Lightly Active',
+    moderate: 'Moderately Active',
+    active: 'Very Active',
+    very_active: 'Athlete',
+}
+const ACTIVITY_DESCRIPTIONS = {
+    sedentary: 'Little or no exercise',
+    light: 'Light exercise 1-3 days/week',
+    moderate: 'Moderate exercise 3-5 days/week',
+    active: 'Hard exercise 6-7 days/week',
+    very_active: 'Very intense daily training',
+}
 const MenuOptions = [
     {
         title: 'Manage Profiles',
@@ -68,13 +99,21 @@ export default function Profile() {
     const [showEditModal, setShowEditModal] = useState(false)
     const [editing, setEditing] = useState(false)
     const [weight, setWeight] = useState('')
-    const [height, setHeight] = useState('')
+    const [feet, setFeet] = useState('')
+    const [inches, setInches] = useState('')
+    const [age, setAge] = useState('')
     const [gender, setGender] = useState('')
     const [goal, setGoal] = useState('')
+    const [activityLevel, setActivityLevel] = useState('moderate')
     const [showProfileManager, setShowProfileManager] = useState(false)
     const [showPicturePicker, setShowPicturePicker] = useState(false)
     const UpdateUserPicture = useMutation(api.Users.UpdateUserPicture)
-    const UpdateUserPref = useMutation(api.Users.UpdateUserPref)
+    const UpdateProfile = useMutation(api.Profiles.UpdateProfile)
+    const CreateProfile = useMutation(api.Profiles.CreateProfile)
+    const activeProfile = useQuery(
+        api.Profiles.GetActiveProfile,
+        user?._id ? { userId: user._id } : 'skip'
+    )
 
     const pickImage = async () => {
         setShowPicturePicker(true)
@@ -164,71 +203,92 @@ export default function Profile() {
 
     // Load user data when opening edit modal
     useEffect(() => {
-        if (showEditModal && user) {
-            setWeight(user.weight || '')
-            setHeight(user.height || '')
-            setGender(user.gender || '')
-            setGoal(user.goal || '')
+        if (!showEditModal || !user) return
+        setWeight(user.weight ? String(user.weight) : '')
+        // Prefer numeric heightCm, then legacy "X.YY" string
+        let cm = Number.isFinite(user.heightCm) ? user.heightCm : null
+        if (!cm && user.height) cm = legacyHeightToCm(user.height)
+        if (cm) {
+            const { feet: f, inches: i } = cmToFeetInches(cm)
+            setFeet(String(f))
+            setInches(String(i))
+        } else {
+            setFeet('')
+            setInches('')
         }
+        setAge(user.age != null ? String(user.age) : '')
+        setGender(user.gender || '')
+        setGoal(user.goal || '')
+        setActivityLevel(user.activityLevel || 'moderate')
     }, [showEditModal, user])
 
     const handleSaveProfile = async () => {
-        if (!weight || !height || !gender) {
+        if (!weight || !feet || !age || !gender) {
             showError('Missing Fields', 'Please fill in all required fields')
             return
         }
 
+        const weightValidation = validateWeight(weight)
+        if (!weightValidation.valid) return showError('Invalid Weight', weightValidation.error)
+
+        const feetValidation = validateFeet(feet)
+        if (!feetValidation.valid) return showError('Invalid Height', feetValidation.error)
+
+        const inchesValidation = validateInches(inches || 0)
+        if (!inchesValidation.valid) return showError('Invalid Height', inchesValidation.error)
+
+        const ageValidation = validateAge(age)
+        if (!ageValidation.valid) return showError('Invalid Age', ageValidation.error)
+
+        const genderValidation = validateGender(gender)
+        if (!genderValidation.valid) return showError('Invalid Gender', genderValidation.error)
+
+        const goalValidation = validateGoal(goal || user.goal || 'Weight Loss')
+        if (!goalValidation.valid) return showError('Invalid Goal', goalValidation.error)
+
+        const activityValidation = validateActivityLevel(activityLevel)
+        if (!activityValidation.valid) return showError('Invalid Activity Level', activityValidation.error)
+
         setEditing(true)
         try {
-            const data = {
-                uid: user._id,
-                weight: weight,
-                height: height,
-                gender: gender,
-                goal: goal || user.goal || 'Weight Loss'
-            }
+            const heightCm = Math.round(feetInchesToCm(feetValidation.value, inchesValidation.value) * 10) / 10
+            const legacyHeight = `${feetValidation.value}.${String(inchesValidation.value).padStart(2, '0')}`
 
-            let JSONContent;
-            
-            // Try AI calculation first, fallback to manual if rate limited
-            try {
-                const PROMPT = JSON.stringify(data)
-                const AIResult = await CalculateCaloriesAI(PROMPT)
-                const AIResp = AIResult.choices[0].message.content
-                JSONContent = JSON.parse(AIResp.replace('```json', '').replace('```', ''))
-                console.log('✅ AI calculation successful')
-            } catch (aiError) {
-                console.warn('⚠️ AI calculation failed, using manual calculation:', aiError.message)
-                
-                // Check if it's a rate limit error
-                if (aiError.message?.includes('429') || aiError.message?.includes('Rate limit')) {
-                    // Use manual calculation as fallback
-                    JSONContent = CalculateNutritionGoalsManually(weight, height, gender, data.goal)
-                    showWarning(
-                        'AI Service Unavailable',
-                        'Free AI service is currently limited. Your profile has been updated using standard calculations.'
-                    )
-                } else {
-                    // For other errors, still try manual calculation
-                    JSONContent = CalculateNutritionGoalsManually(weight, height, gender, data.goal)
-                    console.log('✅ Using manual calculation as fallback')
-                }
-            }
-
-            // Update user preferences
-            await UpdateUserPref({
-                ...data,
-                ...JSONContent
+            const computed = CalculateNutritionGoalsManually(weightValidation.value, {
+                heightCm,
+                gender: genderValidation.value,
+                goal: goalValidation.value,
+                age: ageValidation.value,
+                activityLevel: activityValidation.value,
             })
 
-            // Update user context
+            const profilePayload = {
+                weight: String(weightValidation.value),
+                height: legacyHeight,
+                heightCm,
+                gender: genderValidation.value,
+                goal: goalValidation.value,
+                age: ageValidation.value,
+                activityLevel: activityValidation.value,
+                ...computed,
+            }
+
+            if (activeProfile?._id) {
+                await UpdateProfile({ profileId: activeProfile._id, ...profilePayload })
+            } else {
+                await CreateProfile({
+                    userId: user._id,
+                    name: user.name || 'My Profile',
+                    ...profilePayload,
+                })
+            }
+
             setUser(prev => ({
-                ...prev,
-                ...data,
-                ...JSONContent
+                ...(prev || {}),
+                ...profilePayload,
             }))
 
-            showSuccess('Success!', 'Profile updated successfully. Your nutrition goals have been recalculated.')
+            showSuccess('Success!', 'Profile updated. Your nutrition goals have been recalculated.')
             setShowEditModal(false)
         } catch (error) {
             console.error('Update error:', error)
@@ -240,11 +300,20 @@ export default function Profile() {
 
     const OnMenuOptionClick = (menu) => {
         if (menu.path == 'logout') {
-            signOut(auth).then(() => {
-                console.log('SIGNOUT');
-                setUser(null);
+            (async () => {
+                try {
+                    await AsyncStorage.multiRemove(['rememberMe', 'rememberedEmail'])
+                } catch {
+                    /* non-fatal */
+                }
+                try {
+                    await signOut(auth)
+                } catch (e) {
+                    console.error('[Profile] signOut:', e)
+                }
+                setUser(null)
                 router.replace('/')
-            })
+            })()
             return;
         }
         if (menu.path == 'profiles') {
@@ -370,22 +439,44 @@ export default function Profile() {
 
                 {/* Display User Info */}
                 <View style={styles.userInfoContainer}>
-                    <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
-                        <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Weight:</Text>
-                        <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.weight || 'Not set'} kg</Text>
-                    </View>
-                    <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
-                        <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Height:</Text>
-                        <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.height || 'Not set'} ft</Text>
-                    </View>
-                    <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
-                        <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Gender:</Text>
-                        <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.gender || 'Not set'}</Text>
-                    </View>
-                    <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
-                        <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Goal:</Text>
-                        <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.goal || 'Not set'}</Text>
-                    </View>
+                    {(() => {
+                        let displayHeight = 'Not set'
+                        const cm = Number.isFinite(user?.heightCm)
+                            ? user.heightCm
+                            : (user?.height ? legacyHeightToCm(user.height) : null)
+                        if (cm) {
+                            const { feet: f, inches: i } = cmToFeetInches(cm)
+                            displayHeight = `${f}' ${i}"`
+                        }
+                        return (
+                            <>
+                                <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
+                                    <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Weight:</Text>
+                                    <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.weight || 'Not set'} kg</Text>
+                                </View>
+                                <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
+                                    <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Height:</Text>
+                                    <Text style={[styles.infoValue, { color: colors.TEXT }]}>{displayHeight}</Text>
+                                </View>
+                                <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
+                                    <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Age:</Text>
+                                    <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.age != null ? `${user.age} yrs` : 'Not set'}</Text>
+                                </View>
+                                <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
+                                    <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Activity:</Text>
+                                    <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.activityLevel ? (ACTIVITY_LABELS[user.activityLevel] || user.activityLevel) : 'Not set'}</Text>
+                                </View>
+                                <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
+                                    <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Gender:</Text>
+                                    <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.gender || 'Not set'}</Text>
+                                </View>
+                                <View style={[styles.infoRow, { backgroundColor: colors.CARD, borderWidth: 1, borderColor: colors.BORDER, borderRadius: 12 }]}>
+                                    <Text style={[styles.infoLabel, { color: colors.TEXT_SECONDARY }]}>Goal:</Text>
+                                    <Text style={[styles.infoValue, { color: colors.TEXT }]}>{user?.goal || 'Not set'}</Text>
+                                </View>
+                            </>
+                        )
+                    })()}
                 </View>
             </View>
 
@@ -453,19 +544,39 @@ export default function Profile() {
                         <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
                             <View style={styles.formRow}>
                                 <View style={{ flex: 1 }}>
-                                    <Input 
-                                        placeholder={'e.g 70'} 
+                                    <Input
+                                        placeholder={'e.g 70'}
                                         label='Weight (kg)'
                                         value={weight}
                                         onChangeText={setWeight}
                                     />
                                 </View>
                                 <View style={{ flex: 1, marginLeft: 10 }}>
-                                    <Input 
-                                        placeholder={'e.g 5.10'} 
-                                        label='Height (ft)'
-                                        value={height}
-                                        onChangeText={setHeight}
+                                    <Input
+                                        placeholder={'e.g 28'}
+                                        label='Age'
+                                        value={age}
+                                        onChangeText={setAge}
+                                    />
+                                </View>
+                            </View>
+
+                            <Text style={[styles.sectionLabel, { color: colors.TEXT, marginTop: 16 }]}>Height</Text>
+                            <View style={[styles.formRow, { marginTop: 10 }]}>
+                                <View style={{ flex: 1 }}>
+                                    <Input
+                                        placeholder={'e.g 5'}
+                                        label='Feet'
+                                        value={feet}
+                                        onChangeText={setFeet}
+                                    />
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                    <Input
+                                        placeholder={'e.g 10'}
+                                        label='Inches'
+                                        value={inches}
+                                        onChangeText={setInches}
                                     />
                                 </View>
                             </View>
@@ -503,7 +614,32 @@ export default function Profile() {
                             </View>
 
                             <View style={{ marginTop: 20 }}>
-                                <Text style={[styles.sectionLabel, { color: colors.TEXT }]}>What's Your Goal?</Text>
+                                <Text style={[styles.sectionLabel, { color: colors.TEXT }]}>Activity Level</Text>
+                                {ACTIVITY_LEVELS.map((level) => {
+                                    const selected = activityLevel === level
+                                    return (
+                                        <TouchableOpacity
+                                            key={level}
+                                            onPress={() => setActivityLevel(level)}
+                                            style={[
+                                                styles.goalButton,
+                                                {
+                                                    borderColor: selected ? colors.PRIMARY : colors.BORDER,
+                                                    backgroundColor: selected ? colors.PRIMARY + '10' : 'transparent',
+                                                },
+                                            ]}
+                                        >
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={[styles.goalButtonText, { color: colors.TEXT }]}>{ACTIVITY_LABELS[level]}</Text>
+                                                <Text style={[styles.goalButtonSubtext, { color: colors.TEXT_SECONDARY }]}>{ACTIVITY_DESCRIPTIONS[level]}</Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    )
+                                })}
+                            </View>
+
+                            <View style={{ marginTop: 20 }}>
+                                <Text style={[styles.sectionLabel, { color: colors.TEXT }]}>{'What\'s Your Goal?'}</Text>
                                 <TouchableOpacity
                                     onPress={() => setGoal('Weight Loss')}
                                     style={[

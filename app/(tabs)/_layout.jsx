@@ -37,6 +37,8 @@ const ScanIconWithHalo = React.memo(({ color, size, focused }) => {
     );
 });
 
+ScanIconWithHalo.displayName = 'ScanIconWithHalo';
+
 export default function TabLayout() {
     const insets = useSafeAreaInsets()
     const themeContext = useTheme()

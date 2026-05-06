@@ -72,27 +72,31 @@ export default function AdaptiveInsights() {
             if (__DEV__) {
                 console.log('[AdaptiveInsights] Fetching insights...');
             }
-            const result = await convex.query(api.AdaptiveMonitoring.GetAdaptiveInsights, {
-                uid: userId,
-                days: 7
-            });
+            const dateStr = moment().format('DD/MM/YYYY')
+            const [result, currentIntakeResult] = await Promise.all([
+                convex.query(api.AdaptiveMonitoring.GetAdaptiveInsights, {
+                    uid: userId,
+                    days: 7,
+                }),
+                convex.query(api.MealPlan.GetDailyMacronutrients, {
+                    date: dateStr,
+                    uid: userId,
+                }),
+            ])
 
             if (result && result.events && result.userGoals) {
-                const detection = DetectEatingPatterns(result.events, result.userGoals);
-                
-                const currentIntakeResult = await convex.query(api.MealPlan.GetDailyMacronutrients, {
-                    date: moment().format('DD/MM/YYYY'),
-                    uid: userId
-                });
-                
-                setCurrentIntake(currentIntakeResult || {
-                    calories: 0,
-                    protein: 0,
-                    carbohydrates: 0,
-                    fat: 0,
-                    sodium: 0,
-                    sugar: 0
-                });
+                const detection = DetectEatingPatterns(result.events, result.userGoals)
+
+                setCurrentIntake(
+                    currentIntakeResult || {
+                        calories: 0,
+                        protein: 0,
+                        carbohydrates: 0,
+                        fat: 0,
+                        sodium: 0,
+                        sugar: 0,
+                    }
+                )
 
                 if (currentIntakeResult && user) {
                     const userGoals = {

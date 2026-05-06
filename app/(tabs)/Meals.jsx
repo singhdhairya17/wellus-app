@@ -2,6 +2,7 @@ import { View, Text, Platform, FlatList } from 'react-native'
 import React, { useContext, useMemo, useCallback } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import GenerateRecipeCard from '../../components/meals/GenerateRecipeCard'
+import MealPhotoEstimateCard from '../../components/meals/MealPhotoEstimateCard'
 import TodaysMealPlan from '../../components/meals/TodaysMealPlan'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
@@ -36,6 +37,7 @@ function Meals() {
                 ListHeaderComponent={useMemo(() => (
                     <View>
                         <TodaysMealPlan />
+                        <MealPhotoEstimateCard />
                         <GenerateRecipeCard />
                     </View>
                 ), [])}

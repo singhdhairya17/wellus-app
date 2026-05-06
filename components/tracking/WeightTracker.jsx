@@ -4,6 +4,7 @@ import { useTheme } from '../../context/ThemeContext'
 import { UserContext } from '../../context/UserContext'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
+// activeProfile-aware mutation so goal weight survives the next login merge.
 import { RefreshDataContext } from '../../context/RefreshDataContext'
 import { LinearGradient } from 'expo-linear-gradient'
 import { HugeiconsIcon } from '@hugeicons/react-native'
@@ -13,6 +14,7 @@ import Button from '../common/shared/Button'
 import moment from 'moment'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { resolveHeightCm, bmiFromKgCm } from '../../utils/measurements'
 
 export default function WeightTracker() {
     const { colors } = useTheme()
@@ -42,23 +44,24 @@ export default function WeightTracker() {
     
     const addWeightLog = useMutation(api.Tracking.AddWeightLog)
     const updateUserPref = useMutation(api.Users.UpdateUserPref)
+    const updateProfile = useMutation(api.Profiles.UpdateProfile)
+    const activeProfile = useQuery(
+        api.Profiles.GetActiveProfile,
+        user?._id ? { userId: user._id } : 'skip'
+    )
     
     const latestWeight = weightLogs && weightLogs.length > 0 
         ? weightLogs[weightLogs.length - 1].weight 
         : null
     
-    // Calculate BMI
-    const calculateBMI = (weight, height) => {
-        if (!weight || !height) return null
-        const heightInMeters = parseFloat(height) * 0.3048 // Convert feet to meters
-        const weightInKg = parseFloat(weight)
-        if (heightInMeters <= 0 || weightInKg <= 0) return null
-        return (weightInKg / (heightInMeters * heightInMeters)).toFixed(1)
-    }
-    
-    const bmi = user?.weight && user?.height 
-        ? calculateBMI(user.weight, user.height) 
+    // BMI uses cm for unambiguous math. Prefer the latest logged weight, fall
+    // back to the user-entered weight on the active profile.
+    const bmiWeight = latestWeight ?? parseFloat(user?.weight)
+    const bmiHeightCm = resolveHeightCm({ heightCm: user?.heightCm, height: user?.height })
+    const bmiNumeric = bmiWeight && bmiHeightCm
+        ? bmiFromKgCm(bmiWeight, bmiHeightCm)
         : null
+    const bmi = bmiNumeric != null ? bmiNumeric.toFixed(1) : null
     
     const getBMICategory = (bmi) => {
         if (!bmi) return { label: 'N/A', color: colors.TEXT_SECONDARY }
@@ -132,16 +135,28 @@ export default function WeightTracker() {
         
         setSaving(true)
         try {
-            await updateUserPref({
-                uid: user._id,
-                height: user.height || '',
-                weight: user.weight || '',
-                gender: user.gender || '',
-                goal: user.goal || 'Weight Loss',
-                goalWeight: parseFloat(goalWeight)
-            })
-            // Update local user state
-            setUser({ ...user, goalWeight: parseFloat(goalWeight) })
+            const newGoalWeight = parseFloat(goalWeight)
+
+            // Persist to the active profile (source of truth for body metrics).
+            if (activeProfile?._id) {
+                await updateProfile({
+                    profileId: activeProfile._id,
+                    goalWeight: newGoalWeight,
+                })
+            } else {
+                // Fall back to the legacy users-row write so older accounts
+                // without a profile still get a saved goal weight.
+                await updateUserPref({
+                    uid: user._id,
+                    height: user.height || '',
+                    weight: user.weight || '',
+                    gender: user.gender || '',
+                    goal: user.goal || 'Weight Loss',
+                    goalWeight: newGoalWeight,
+                })
+            }
+
+            setUser({ ...user, goalWeight: newGoalWeight })
             Alert.alert('Success!', 'Goal weight updated successfully')
             setShowGoalModal(false)
             setGoalWeight('')

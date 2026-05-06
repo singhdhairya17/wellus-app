@@ -11,8 +11,9 @@ import { api } from '../../convex/_generated/api'
 import { UserContext } from '../../context/UserContext'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useTheme } from '../../context/ThemeContext'
-import { validateEmail } from '../../utils/validation'
+import { validateEmail, emailDisplayForRememberMe } from '../../utils/validation'
 import { sanitizeError, rateLimiter } from '../../utils/security'
+import { hydrateUserSession } from '../../utils/loadUserSession'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 // Removed animations for faster rendering
@@ -72,7 +73,7 @@ export default function SignIn() {
             const userCredential = await signInWithEmailAndPassword(auth, emailValidation.value, password);
             const user = userCredential.user;
             const userData = await convex.query(api.Users.GetUser, {
-                email: (email).toLowerCase()
+                email: emailValidation.value,
             });
 
             console.log('[SignIn] Loaded user data:', {
@@ -80,7 +81,14 @@ export default function SignIn() {
                 email: userData?.email,
                 hasPicture: !!userData?.picture,
             });
-            setUser(userData);
+
+            // Merge active profile + run legacy migration BEFORE navigating to
+            // Home so the dashboard shows correct calorie/macro targets on
+            // first paint (no more 425 kcal flicker until Profile tab mounts).
+            const hydrated = userData
+                ? await hydrateUserSession({ convex, userData })
+                : userData;
+            setUser(hydrated);
 
             // Check if user is new (created within last 30 minutes) and should see onboarding
             let shouldShowOnboarding = false;
@@ -102,13 +110,14 @@ export default function SignIn() {
                 }
             }
 
-            // Handle "Remember Me"
+            // Remember Me stores display casing only; lookups use lowercase emailValidation.value
             if (rememberMe) {
-                // Save email and preference
                 await AsyncStorage.setItem('rememberMe', 'true');
-                await AsyncStorage.setItem('rememberedEmail', email.toLowerCase());
+                await AsyncStorage.setItem(
+                    'rememberedEmail',
+                    emailDisplayForRememberMe(email),
+                );
             } else {
-                // Clear saved data
                 await AsyncStorage.removeItem('rememberMe');
                 await AsyncStorage.removeItem('rememberedEmail');
             }
@@ -235,7 +244,7 @@ export default function SignIn() {
 
                         <View style={styles.signUpContainer}>
                             <Text style={[styles.signUpText, { color: colors.TEXT_SECONDARY }]}>
-                                Don't have an account?{' '}
+                                {'Don\'t have an account?'}{' '}
                             </Text>
                             <Link href={'/auth/SignUp'}>
                                 <Text style={[styles.signUpLink, { color: colors.PRIMARY }]}>

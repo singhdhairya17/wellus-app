@@ -92,18 +92,26 @@ export default function HealthCoachChat() {
     )
     const exerciseLogs = Array.isArray(exerciseQuery) ? exerciseQuery : []
 
+    const weightLogsQuery = useQuery(
+        api.Tracking.GetWeightLogs,
+        user?._id ? { uid: user._id, days: 21 } : 'skip'
+    )
+    const weightLogs = Array.isArray(weightLogsQuery) ? weightLogsQuery : []
+
     // Build user context - only build if we have user data
     const userContext = useMemo(() => {
         if (!user?._id) return ''
-        return BuildUserContext(
+        const snapshot = BuildUserContext(
             user,
             dailyMacros || {},
             recentMeals,
             {},
             waterQuery || {},
-            exerciseLogs
+            exerciseLogs,
+            weightLogs
         )
-    }, [user, dailyMacros, recentMeals, waterQuery, exerciseLogs])
+        return `Reference: "today" in the app is ${today} (DD/MM/YYYY) for meals, water, exercise, and daily totals.\n\n${snapshot}`
+    }, [user, dailyMacros, recentMeals, waterQuery, exerciseLogs, weightLogs, today])
     
     useEffect(() => {
         // Add welcome message

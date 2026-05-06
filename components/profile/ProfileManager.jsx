@@ -12,6 +12,7 @@ import { UserSquareIcon, Delete01Icon, Add01Icon, CheckmarkCircle01Icon } from '
 import Input from '../common/shared/Input';
 import Button from '../common/shared/Button';
 import { CalculateNutritionGoalsManually } from '../../services/calculation/ManualCalculationService';
+import { legacyHeightToCm } from '../../utils/measurements';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 export default function ProfileManager({ visible, onClose }) {
@@ -57,14 +58,20 @@ export default function ProfileManager({ visible, onClose }) {
 
         setLoading(true);
         try {
-            // Calculate nutrition goals
-            const JSONContent = CalculateNutritionGoalsManually(weight, height, gender, goal || 'Weight Loss');
+            const heightCm = legacyHeightToCm(height) ?? undefined;
+            const JSONContent = CalculateNutritionGoalsManually(weight, {
+                heightCm,
+                height,
+                gender,
+                goal: goal || 'Weight Loss',
+            });
 
             await createProfile({
                 userId: user._id,
                 name: profileName,
                 weight: weight,
                 height: height,
+                heightCm,
                 gender: gender,
                 goal: goal || 'Weight Loss',
                 ...JSONContent
@@ -138,14 +145,20 @@ export default function ProfileManager({ visible, onClose }) {
 
         setLoading(true);
         try {
-            // Recalculate nutrition goals
-            const JSONContent = CalculateNutritionGoalsManually(weight, height, gender, goal || 'Weight Loss');
+            const heightCm = legacyHeightToCm(height) ?? undefined;
+            const JSONContent = CalculateNutritionGoalsManually(weight, {
+                heightCm,
+                height,
+                gender,
+                goal: goal || 'Weight Loss',
+            });
 
             await updateProfile({
                 profileId: editingProfile._id,
                 name: profileName,
                 weight: weight,
                 height: height,
+                heightCm,
                 gender: gender,
                 goal: goal || 'Weight Loss',
                 ...JSONContent

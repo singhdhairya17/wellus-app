@@ -4,11 +4,13 @@ import { UserContext } from './../context/UserContext';
 import { RefreshDataContext } from './../context/RefreshDataContext';
 import { ThemeProvider } from './../context/ThemeContext';
 import { LogBox, View, Text } from 'react-native';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ErrorBoundary from '../components/common/ErrorBoundary';
 import ThemedAlert from '../components/common/ThemedAlert';
 import * as SplashScreen from 'expo-splash-screen';
+// @ts-ignore - JS helper without types
+import { syncRemindersOnStartup } from '../services/reminders/syncReminders';
 
 // Keep splash screen visible while we load resources
 SplashScreen.preventAutoHideAsync();
@@ -49,9 +51,21 @@ const convexClient = CONVEX_URL
   : null;
 
 export default function RootLayout() {
-  const [user, setUser] = useState();
+  const [user, setUser] = useState<any>();
   const [refreshData, setRefreshData] = useState();
   const [appIsReady, setAppIsReady] = useState(false);
+  const remindersSyncedFor = useRef<string | null>(null);
+
+  // Re-sync local reminders whenever a new user becomes active. The helper
+  // itself is idempotent (cancels + reschedules `wellus-reminder-*`), and
+  // the ref guard ensures we don't trigger it on every render.
+  useEffect(() => {
+    const uid = user?._id;
+    if (!convexClient || !uid) return;
+    if (remindersSyncedFor.current === uid) return;
+    remindersSyncedFor.current = uid;
+    syncRemindersOnStartup({ convex: convexClient, uid }).catch(() => null);
+  }, [user?._id]);
 
   useEffect(() => {
     async function prepare() {

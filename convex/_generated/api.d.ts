@@ -12,6 +12,7 @@ import type * as AdaptiveMonitoring from "../AdaptiveMonitoring.js";
 import type * as Ai from "../Ai.js";
 import type * as Billing from "../Billing.js";
 import type * as MealPlan from "../MealPlan.js";
+import type * as Migrations from "../Migrations.js";
 import type * as Profiles from "../Profiles.js";
 import type * as Recipes from "../Recipes.js";
 import type * as Reminders from "../Reminders.js";
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   Ai: typeof Ai;
   Billing: typeof Billing;
   MealPlan: typeof MealPlan;
+  Migrations: typeof Migrations;
   Profiles: typeof Profiles;
   Recipes: typeof Recipes;
   Reminders: typeof Reminders;
